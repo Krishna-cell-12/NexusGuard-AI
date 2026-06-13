@@ -33,7 +33,7 @@ Write-Host ""
 $envFile = ".env"
 if (-not (Test-Path $envFile)) {
     $envFile = "..\backend\.env"
-    Write-Host "⚠️   No local .env found — using backend\.env" -ForegroundColor Yellow
+    Write-Host "WARNING: No local .env found - using backend .env" -ForegroundColor Yellow
 }
 
 # Start the FastAPI server

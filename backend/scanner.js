@@ -140,25 +140,16 @@ export async function runSemgrep(dir) {
   let raw;
 
   try {
-    // semgrep exits with code 1 when it finds issues, so runCommand would throw.
-    // We catch that specific case and still use stdout.
-    raw = await runCommand("semgrep scan --config auto --json --quiet", dir);
+    // On Windows, running semgrep scan may output the JSON to stdout or stderr depending on Python configuration.
+    // We capture stdout from a direct exec execution.
+    const { stdout, stderr } = await execAsync(
+      "semgrep scan --config auto --json --quiet",
+      { cwd: dir, timeout: EXEC_TIMEOUT_MS, maxBuffer: EXEC_MAX_BUFFER }
+    );
+    raw = stdout || stderr;
   } catch (err) {
-    if (err.code === 1) {
-      // Exit code 1 = findings present — stdout still has valid JSON.
-      raw = err.stderr?.includes("{") ? err.stderr : "";
-      // semgrep writes JSON to stdout even on exit 1, re-run to capture stdout.
-      try {
-        const { stdout } = await execAsync(
-          "semgrep scan --config auto --json --quiet",
-          { cwd: dir, timeout: EXEC_TIMEOUT_MS, maxBuffer: EXEC_MAX_BUFFER }
-        );
-        raw = stdout;
-      } catch (inner) {
-        raw = inner.stdout ?? "";
-      }
-    } else {
-      // Real failure (no semgrep binary, network error fetching rules, etc.)
+    raw = err.stdout || err.stderr || "";
+    if (!raw.trim().startsWith("{")) {
       throw err;
     }
   }
@@ -203,14 +194,23 @@ export async function runTruffleHog(dir) {
   let raw;
 
   try {
-    // TruffleHog outputs NDJSON (one JSON object per line) to stdout.
-    raw = await runCommand("trufflehog filesystem . --json --no-update", dir);
+    // Check if we are running the older python-based trufflehog (which doesn't support the 'filesystem' command)
+    // or the newer Go-based trufflehog v3. We run a legacy compatible command or handle fallback.
+    raw = await runCommand("trufflehog --json .", dir);
   } catch (err) {
-    // TruffleHog exits with code 183 when secrets are found (v3 behaviour).
-    if (err.code === 183 || err.stdout) {
+    if (err.code === 183 || err.stdout || err.code === 1) {
       raw = err.stdout ?? "";
     } else {
-      throw err;
+      // Try fallback to newer filesystem syntax in case it's actually v3 but exited strangely
+      try {
+        raw = await runCommand("trufflehog filesystem . --json --no-update", dir);
+      } catch (innerErr) {
+        if (innerErr.stdout) {
+          raw = innerErr.stdout;
+        } else {
+          throw err;
+        }
+      }
     }
   }
 

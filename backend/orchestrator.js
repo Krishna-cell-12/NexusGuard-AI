@@ -57,19 +57,19 @@ const REPO_FULL_NAME = process.env.REPO_FULL_NAME ?? null;
  * Lets you grep a log stream with `grep '"state"' server.log` during a demo.
  */
 export const PipelineState = Object.freeze({
-  STARTED:           "STARTED",
-  SCANNING:          "SCANNING",
-  SCAN_COMPLETE:     "SCAN_COMPLETE",
-  NO_VULNS_FOUND:    "NO_VULNS_FOUND",
-  REQUESTING_PATCH:  "REQUESTING_PATCH",
-  PATCH_RECEIVED:    "PATCH_RECEIVED",
-  SUBMITTING_PATCH:  "SUBMITTING_PATCH",   // NEW: registerring patch on-chain
-  PATCH_SUBMITTED:   "PATCH_SUBMITTED",    // NEW: bounty OPEN → SUBMITTED
+  STARTED: "STARTED",
+  SCANNING: "SCANNING",
+  SCAN_COMPLETE: "SCAN_COMPLETE",
+  NO_VULNS_FOUND: "NO_VULNS_FOUND",
+  REQUESTING_PATCH: "REQUESTING_PATCH",
+  PATCH_RECEIVED: "PATCH_RECEIVED",
+  SUBMITTING_PATCH: "SUBMITTING_PATCH",   // NEW: registerring patch on-chain
+  PATCH_SUBMITTED: "PATCH_SUBMITTED",    // NEW: bounty OPEN → SUBMITTED
   TRIGGERING_BOUNTY: "TRIGGERING_BOUNTY",
-  BOUNTY_RELEASED:   "BOUNTY_RELEASED",
-  NOTIFYING_UI:      "NOTIFYING_UI",
-  COMPLETED:         "COMPLETED",
-  FAILED:            "FAILED",
+  BOUNTY_RELEASED: "BOUNTY_RELEASED",
+  NOTIFYING_UI: "NOTIFYING_UI",
+  COMPLETED: "COMPLETED",
+  FAILED: "FAILED",
 });
 
 // ─── WebSocket Registry ───────────────────────────────────────────────────────
@@ -94,7 +94,7 @@ export function registerWsServer(wss) {
   wss.on("connection", (ws) => {
     wsClients.add(ws);
     ws.on("close", () => wsClients.delete(ws));
-    ws.on("error", ()  => wsClients.delete(ws));
+    ws.on("error", () => wsClients.delete(ws));
   });
 }
 
@@ -108,10 +108,10 @@ function makeLogger(runId) {
   const base = { runId };
 
   return {
-    info:  (state, message, meta = {}) =>
-      console.log(JSON.stringify({  level: "info",  timestamp: new Date().toISOString(), state, message, ...base, ...meta })),
-    warn:  (state, message, meta = {}) =>
-      console.warn(JSON.stringify({ level: "warn",  timestamp: new Date().toISOString(), state, message, ...base, ...meta })),
+    info: (state, message, meta = {}) =>
+      console.log(JSON.stringify({ level: "info", timestamp: new Date().toISOString(), state, message, ...base, ...meta })),
+    warn: (state, message, meta = {}) =>
+      console.warn(JSON.stringify({ level: "warn", timestamp: new Date().toISOString(), state, message, ...base, ...meta })),
     error: (state, message, meta = {}) =>
       console.error(JSON.stringify({ level: "error", timestamp: new Date().toISOString(), state, message, ...base, ...meta })),
   };
@@ -150,14 +150,14 @@ function httpClient(serviceLabel) {
   instance.interceptors.response.use(
     (res) => res,
     (err) => {
-      const status  = err.response?.status;
-      const detail  = err.response?.data ?? err.message;
+      const status = err.response?.status;
+      const detail = err.response?.data ?? err.message;
       const enriched = new Error(
         `[${serviceLabel}] HTTP ${status ?? "network error"}: ${JSON.stringify(detail)}`
       );
-      enriched.status      = status;
+      enriched.status = status;
       enriched.serviceLabel = serviceLabel;
-      enriched.upstream    = detail;
+      enriched.upstream = detail;
       return Promise.reject(enriched);
     }
   );
@@ -194,14 +194,14 @@ async function runScanners(repoDetails) {
     ]);
 
     // Tolerate individual scanner failures — partial results are still useful.
-    const vulnerabilities = semgrepResult.status    === "fulfilled" ? semgrepResult.value    : [];
-    const secrets         = truffleHogResult.status === "fulfilled" ? truffleHogResult.value : [];
-    const dynamic         = dynamicResult.status    === "fulfilled" ? dynamicResult.value    : null;
+    const vulnerabilities = semgrepResult.status === "fulfilled" ? semgrepResult.value : [];
+    const secrets = truffleHogResult.status === "fulfilled" ? truffleHogResult.value : [];
+    const dynamic = dynamicResult.status === "fulfilled" ? dynamicResult.value : null;
 
     const scanErrors = [
-      semgrepResult.status    === "rejected" ? `Semgrep: ${semgrepResult.reason?.message}`    : null,
+      semgrepResult.status === "rejected" ? `Semgrep: ${semgrepResult.reason?.message}` : null,
       truffleHogResult.status === "rejected" ? `TruffleHog: ${truffleHogResult.reason?.message}` : null,
-      dynamicResult.status    === "rejected" ? `Sandbox: ${dynamicResult.reason?.message}`    : null,
+      dynamicResult.status === "rejected" ? `Sandbox: ${dynamicResult.reason?.message}` : null,
     ].filter(Boolean);
 
     // ── Build summary ───────────────────────────────────────────────────────
@@ -220,8 +220,8 @@ async function runScanners(repoDetails) {
       dynamic,                  // Docker sandbox output (runtime behaviour)
       summary: {
         totalVulnerabilities: vulnerabilities.length,
-        totalSecrets:         secrets.length,
-        verifiedSecrets:      secrets.filter((s) => s.verified).length,
+        totalSecrets: secrets.length,
+        verifiedSecrets: secrets.filter((s) => s.verified).length,
         vulnBySeverity,
         dynamicAnalysis: dynamic
           ? { runtime: dynamic.runtime, exitCode: dynamic.exitCode, timedOut: dynamic.timedOut }
@@ -277,19 +277,19 @@ async function runScanners(repoDetails) {
 export async function processVulnerabilityWorkflow(repoDetails) {
   // Every run gets a unique ID so concurrent pipeline logs don't interleave.
   const runId = `run_${Date.now()}_${Math.random().toString(36).slice(2, 7)}`;
-  const log   = makeLogger(runId);
-  const http  = httpClient;
+  const log = makeLogger(runId);
+  const http = httpClient;
 
   // Accumulated result — built up incrementally so partial results survive errors.
   const result = {
-    success:             false,
+    success: false,
     runId,
-    finalState:          PipelineState.STARTED,
+    finalState: PipelineState.STARTED,
     vulnerabilityReport: null,
-    patchCode:           null,
-    patchExplanation:    null,
-    bountyReceipt:       null,
-    error:               null,
+    patchCode: null,
+    patchExplanation: null,
+    bountyReceipt: null,
+    error: null,
   };
 
   // Helper: update state, log it, persist to runStore, and broadcast to WS clients.
@@ -301,18 +301,18 @@ export async function processVulnerabilityWorkflow(repoDetails) {
       runId,
       state,
       message,
-      updatedAt:  new Date().toISOString(),
-      startedAt:  result.startedAt ?? (result.startedAt = new Date().toISOString()),
-      repoName:   repoDetails.repoName,
-      commitSha:  repoDetails.commitSha,
+      updatedAt: new Date().toISOString(),
+      startedAt: result.startedAt ?? (result.startedAt = new Date().toISOString()),
+      repoName: repoDetails.repoName,
+      commitSha: repoDetails.commitSha,
       senderLogin: repoDetails.senderLogin,
       // Rich data for dashboard panels (populated as pipeline progresses)
-      scanReport:      result.vulnerabilityReport ?? undefined,
-      patchResult:     result.patchCode ? {
-        patchCode:    result.patchCode,
-        explanation:  result.patchExplanation,
-        prUrl:        meta.prUrl    ?? undefined,
-        prNumber:     meta.prNumber ?? undefined,
+      scanReport: result.vulnerabilityReport ?? undefined,
+      patchResult: result.patchCode ? {
+        patchCode: result.patchCode,
+        explanation: result.patchExplanation,
+        prUrl: meta.prUrl ?? undefined,
+        prNumber: meta.prNumber ?? undefined,
       } : undefined,
       blockchainResult: result.bountyReceipt ?? undefined,
       error: result.error ?? undefined,
@@ -323,8 +323,8 @@ export async function processVulnerabilityWorkflow(repoDetails) {
 
   try {
     transition(PipelineState.STARTED, "Vulnerability workflow initiated.", {
-      repoName:    repoDetails.repoName,
-      commitSha:   repoDetails.commitSha,
+      repoName: repoDetails.repoName,
+      commitSha: repoDetails.commitSha,
       senderLogin: repoDetails.senderLogin,
     });
 
@@ -342,12 +342,12 @@ export async function processVulnerabilityWorkflow(repoDetails) {
 
     transition(PipelineState.SCAN_COMPLETE, "Scan finished.", {
       totalVulnerabilities: vulnerabilityReport.summary.totalVulnerabilities,
-      totalSecrets:         vulnerabilityReport.summary.totalSecrets,
-      verifiedSecrets:      vulnerabilityReport.summary.verifiedSecrets,
-      vulnBySeverity:       vulnerabilityReport.summary.vulnBySeverity,
-      dynamicAnalysis:      vulnerabilityReport.summary.dynamicAnalysis,
-      scanErrors:           vulnerabilityReport.summary.scanErrors,
-      hasFindings:          vulnerabilityReport.hasFindings,
+      totalSecrets: vulnerabilityReport.summary.totalSecrets,
+      verifiedSecrets: vulnerabilityReport.summary.verifiedSecrets,
+      vulnBySeverity: vulnerabilityReport.summary.vulnBySeverity,
+      dynamicAnalysis: vulnerabilityReport.summary.dynamicAnalysis,
+      scanErrors: vulnerabilityReport.summary.scanErrors,
+      hasFindings: vulnerabilityReport.hasFindings,
     });
 
     // ── Step 2: Short-circuit if nothing found ──────────────────────────────
@@ -365,10 +365,10 @@ export async function processVulnerabilityWorkflow(repoDetails) {
 
     transition(PipelineState.REQUESTING_PATCH,
       "Findings detected — requesting AI patch generation.", {
-        endpoint: AI_SERVICE_URL,
-        findingCount: vulnerabilityReport.summary.totalVulnerabilities +
-                      vulnerabilityReport.summary.totalSecrets,
-      }
+      endpoint: AI_SERVICE_URL,
+      findingCount: vulnerabilityReport.summary.totalVulnerabilities +
+        vulnerabilityReport.summary.totalSecrets,
+    }
     );
 
     // Use the extended AI timeout — LLM calls + optional GitHub PR creation
@@ -398,14 +398,14 @@ export async function processVulnerabilityWorkflow(repoDetails) {
       throw new Error("AI service returned a response but 'patchCode' field is missing.");
     }
 
-    result.patchCode        = patchCode;
+    result.patchCode = patchCode;
     result.patchExplanation = patchExplanation ?? null;
 
     transition(PipelineState.PATCH_RECEIVED, "AI patch received.", {
-      patchLength:    patchCode.length,
+      patchLength: patchCode.length,
       hasExplanation: Boolean(patchExplanation),
-      prUrl:          prUrl ?? null,
-      prNumber:       prNumber ?? null,
+      prUrl: prUrl ?? null,
+      prNumber: prNumber ?? null,
     });
 
     // ── Step 3b: Submit Patch on-chain (OPEN → SUBMITTED) ───────────────────
@@ -414,19 +414,19 @@ export async function processVulnerabilityWorkflow(repoDetails) {
 
     transition(PipelineState.SUBMITTING_PATCH,
       "Registering patch on-chain (submitPatch)...", {
-        endpoint: SUBMIT_PATCH_URL,
-        repoName: repoDetails.repoName,
-      }
+      endpoint: SUBMIT_PATCH_URL,
+      repoName: repoDetails.repoName,
+    }
     );
 
     try {
       const submitResponse = await http("Submit Patch").post(SUBMIT_PATCH_URL, {
-        repoName:    repoDetails.repoName,
-        commitSha:   repoDetails.commitSha,
+        repoName: repoDetails.repoName,
+        commitSha: repoDetails.commitSha,
         senderLogin: repoDetails.senderLogin,
         patchCode,
-        prUrl:       prUrl ?? null,
-        prNumber:    prNumber ?? null,
+        prUrl: prUrl ?? null,
+        prNumber: prNumber ?? null,
       });
 
       transition(PipelineState.PATCH_SUBMITTED, "Patch registered on-chain.", {
@@ -447,40 +447,50 @@ export async function processVulnerabilityWorkflow(repoDetails) {
 
     transition(PipelineState.TRIGGERING_BOUNTY,
       "Triggering Web3 bounty release...", {
-        endpoint: WEB3_SERVICE_URL,
-        repoName: repoDetails.repoName,
-      }
+      endpoint: WEB3_SERVICE_URL,
+      repoName: repoDetails.repoName,
+    }
     );
 
-    const web3Response = await http("Web3 Bounty Service").post(WEB3_SERVICE_URL, {
-      repoName:    repoDetails.repoName,
-      commitSha:   repoDetails.commitSha,
-      senderLogin: repoDetails.senderLogin,
-      patchCode,
-      prUrl:       prUrl ?? null,
-      prNumber:    prNumber ?? null,
-      report:      vulnerabilityReport.summary,
-    });
+    let bountyReceipt = null;
+    try {
+      const web3Response = await http("Web3 Bounty Service").post(WEB3_SERVICE_URL, {
+        repoName: repoDetails.repoName,
+        commitSha: repoDetails.commitSha,
+        senderLogin: repoDetails.senderLogin,
+        patchCode,
+        prUrl: prUrl ?? null,
+        prNumber: prNumber ?? null,
+        report: vulnerabilityReport.summary,
+      });
 
-    const bountyReceipt = web3Response.data;
-    result.bountyReceipt = bountyReceipt;
+      bountyReceipt = web3Response.data;
+      result.bountyReceipt = bountyReceipt;
 
-    transition(PipelineState.BOUNTY_RELEASED, "Bounty transaction submitted.", {
-      txHash:   bountyReceipt?.txHash   ?? "unknown",
-      amount:   bountyReceipt?.amount   ?? "unknown",
-      currency: bountyReceipt?.currency ?? "unknown",
-    });
+      transition(PipelineState.BOUNTY_RELEASED, "Bounty transaction submitted.", {
+        txHash: bountyReceipt?.txHash ?? "unknown",
+        amount: bountyReceipt?.amount ?? "unknown",
+        currency: bountyReceipt?.currency ?? "unknown",
+      });
+    } catch (web3Err) {
+      // Bounty release failing is non-fatal for the demo — log/warn and continue to UI notification.
+      log.warn(
+        PipelineState.TRIGGERING_BOUNTY,
+        "Web3 bounty release call failed (non-fatal — continuing to frontend notification).",
+        { error: web3Err.message }
+      );
+    }
 
     // ── Step 5: Notify Frontend ─────────────────────────────────────────────
 
     transition(PipelineState.NOTIFYING_UI, "Broadcasting results to frontend.");
 
     const uiPayload = {
-      event:       "SCAN_COMPLETE",
+      event: "SCAN_COMPLETE",
       runId,
-      repoName:    repoDetails.repoName,
-      commitSha:   repoDetails.commitSha,
-      summary:     vulnerabilityReport.summary,
+      repoName: repoDetails.repoName,
+      commitSha: repoDetails.commitSha,
+      summary: vulnerabilityReport.summary,
       patchCode,
       patchExplanation,
       bountyReceipt,
@@ -502,9 +512,9 @@ export async function processVulnerabilityWorkflow(repoDetails) {
         // Non-fatal — the WS broadcast already went out.
         log.warn(PipelineState.NOTIFYING_UI,
           "Frontend webhook POST failed (non-fatal).", {
-            url:   FRONTEND_WEBHOOK_URL,
-            error: webhookErr.message,
-          }
+          url: FRONTEND_WEBHOOK_URL,
+          error: webhookErr.message,
+        }
         );
       }
     }
@@ -526,19 +536,19 @@ export async function processVulnerabilityWorkflow(repoDetails) {
 
     log.error(PipelineState.FAILED, "Pipeline failed.", {
       failedAtState: result.finalState,
-      error:         err.message,
+      error: err.message,
       // Include upstream service response body if available.
-      upstream:      err.upstream ?? null,
-      httpStatus:    err.status   ?? null,
-      serviceLabel:  err.serviceLabel ?? null,
+      upstream: err.upstream ?? null,
+      httpStatus: err.status ?? null,
+      serviceLabel: err.serviceLabel ?? null,
     });
 
     // Broadcast failure to frontend so the dashboard updates immediately.
     broadcastToClients({
-      event:        "PIPELINE_FAILED",
+      event: "PIPELINE_FAILED",
       runId,
       failedAtState: result.finalState,
-      error:         err.message,
+      error: err.message,
     });
 
     result.finalState = PipelineState.FAILED;

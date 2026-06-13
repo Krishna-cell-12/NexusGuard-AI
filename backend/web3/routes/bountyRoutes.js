@@ -17,6 +17,7 @@ import { Router } from "express";
 import {
   healthCheck,
   getBountyStatus,
+  createBountyController,
   submitPatchController,
   triggerBounty,
   handleMergeWebhook,
@@ -29,6 +30,10 @@ router.get("/health", healthCheck);
 
 // ── On-chain bounty query ────────────────────────────────────────────────────
 router.get("/bounty/:bugId", getBountyStatus);
+
+// ── Internal: create bounty escrow on-chain (MUST happen first) ─────────────
+// Called by the orchestrator immediately after vulnerabilities are detected.
+router.post("/create-bounty", createBountyController);
 
 // ── Internal: submit patch (OPEN → SUBMITTED) ───────────────────────────────
 // Called by the orchestrator after the AI service generates and creates a patch PR.

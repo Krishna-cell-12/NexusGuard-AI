@@ -173,12 +173,19 @@ export async function runDynamicAnalysis(repoPath) {
   const docker = new Dockerode({ socketPath: "/var/run/docker.sock" });
 
   // Verify the daemon is reachable before doing anything else.
-  await docker.ping().catch(() => {
-    throw new Error(
-      "Docker daemon is not reachable at /var/run/docker.sock. " +
-      "Ensure Docker is running and the current user has socket access."
-    );
-  });
+  try {
+    await docker.ping();
+  } catch {
+    console.warn("[NexusGuard/Sandbox] Docker daemon not reachable. Bypassing dynamic analysis.");
+    return {
+      runtime,
+      image: profile.image,
+      output: "Docker daemon not running; dynamic analysis bypassed.",
+      exitCode: null,
+      timedOut: false,
+      containerId: "N/A",
+    };
+  }
 
   await ensureImage(docker, profile.image);
 

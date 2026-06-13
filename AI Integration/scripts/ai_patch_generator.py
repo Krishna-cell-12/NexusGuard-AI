@@ -32,8 +32,8 @@ import requests
 import yaml
 from dotenv import load_dotenv
 
-# Load .env from project root
-load_dotenv(Path(__file__).resolve().parent.parent / ".env")
+# Load .env from backend directory
+load_dotenv(Path(__file__).resolve().parent.parent.parent / "backend" / ".env")
 
 # ── Logging ──────────────────────────────────────────────────
 logging.basicConfig(

@@ -30,8 +30,8 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 from pydantic import BaseModel
 
-# Load .env from this directory
-load_dotenv(Path(__file__).resolve().parent / ".env")
+# Load .env from backend directory
+load_dotenv(Path(__file__).resolve().parent.parent / "backend" / ".env")
 
 # ── Logging ──────────────────────────────────────────────────
 logging.basicConfig(

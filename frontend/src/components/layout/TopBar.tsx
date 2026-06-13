@@ -1,13 +1,21 @@
 "use client";
 import { useHealth } from "@/hooks/useBackendData";
 import { useWebSocket } from "@/hooks/useWebSocket";
-import { Wifi, WifiOff, Clock } from "lucide-react";
+import { Clock } from "lucide-react";
+import { useState, useEffect } from "react";
 
 export default function TopBar() {
   const { data: health } = useHealth();
   const { connected }    = useWebSocket();
+  const [time, setTime]  = useState("");
 
-  const now = new Date().toLocaleTimeString("en-US", { hour12: false });
+  // Only render time on client to avoid SSR hydration mismatch
+  useEffect(() => {
+    const tick = () => setTime(new Date().toLocaleTimeString("en-US", { hour12: false }));
+    tick();
+    const id = setInterval(tick, 1000);
+    return () => clearInterval(id);
+  }, []);
 
   return (
     <header className="topbar">
@@ -15,32 +23,29 @@ export default function TopBar() {
         <span className="topbar-title">NEXUSGUARD AI // SECURITY COMMAND CENTER</span>
       </div>
       <div className="topbar-right">
-        {/* WebSocket status */}
-        <div className="flex gap-2" style={{ alignItems: "center", gap: 6 }}>
+        <div style={{ display: "flex", alignItems: "center", gap: 6, fontFamily: "var(--font-mono)", fontSize: "0.75rem" }}>
           {connected
             ? <><div className="status-dot online" /><span>WS Live</span></>
             : <><div className="status-dot offline" /><span>WS Offline</span></>
           }
         </div>
-
-        {/* Backend health */}
-        <div className="flex gap-2" style={{ alignItems: "center", gap: 6 }}>
+        <div style={{ display: "flex", alignItems: "center", gap: 6, fontFamily: "var(--font-mono)", fontSize: "0.75rem" }}>
           {health?.status === "ok"
             ? <><div className="status-dot online" /><span>Backend OK</span></>
             : <><div className="status-dot offline" /><span>Backend Down</span></>
           }
         </div>
-
         {health && (
-          <span style={{ color: "var(--fg-dim)", fontSize: "0.7rem" }}>
+          <span style={{ color: "var(--fg-dim)", fontSize: "0.7rem", fontFamily: "var(--font-mono)" }}>
             uptime {health.uptime}s
           </span>
         )}
-
-        <div style={{ display: "flex", alignItems: "center", gap: 4, color: "var(--fg-dim)" }}>
-          <Clock size={12} />
-          <span style={{ fontFamily: "var(--font-mono)", fontSize: "0.75rem" }}>{now}</span>
-        </div>
+        {time && (
+          <div style={{ display: "flex", alignItems: "center", gap: 4, color: "var(--fg-dim)" }}>
+            <Clock size={12} />
+            <span style={{ fontFamily: "var(--font-mono)", fontSize: "0.75rem" }}>{time}</span>
+          </div>
+        )}
       </div>
     </header>
   );

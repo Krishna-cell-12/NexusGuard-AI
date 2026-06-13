@@ -84,6 +84,14 @@ console.log(`[NexusGuard] Oracle wallet : ${oracleWallet.address}`);
 console.log(`[NexusGuard] Contract      : ${process.env.CONTRACT_ADDRESS}`);
 console.log(`[NexusGuard] Network       : Polygon Amoy`);
 
+/**
+ * Always fetches the latest nonce from the chain ("pending" includes mempool txs).
+ * This prevents stale-nonce errors when a previous tx.wait() was interrupted.
+ */
+async function getFreshNonce() {
+  return provider.getTransactionCount(oracleWallet.address, "pending");
+}
+
 // ─────────────────────────────────────────────────────────────
 //  BOUNTY STATUS ENUM (mirrors Solidity BountyStatus)
 // ─────────────────────────────────────────────────────────────
@@ -209,7 +217,11 @@ async function executeReleaseBounty(body, res) {
   let tx;
   try {
     console.log(`[NexusGuard] 📡 Sending releaseBounty() transaction...`);
-    tx = await bountyContract.releaseBounty(sanitizedBugId, contributorWalletAddress);
+    tx = await bountyContract.releaseBounty(
+      sanitizedBugId,
+      contributorWalletAddress,
+      { nonce: await getFreshNonce() }  // always fetch fresh — avoids stale-nonce errors
+    );
     console.log(`[NexusGuard] ⏳ Tx submitted: ${tx.hash}`);
     console.log(`             Explorer: https://amoy.polygonscan.com/tx/${tx.hash}`);
   } catch (err) {
@@ -236,7 +248,7 @@ async function executeReleaseBounty(body, res) {
   let receipt;
   try {
     console.log(`[NexusGuard] ⌛ Waiting for block confirmation...`);
-    receipt = await tx.wait(2);
+    receipt = await tx.wait(1); // 1 confirmation works on both Hardhat local & Polygon Amoy
     console.log(`[NexusGuard] ✅ Confirmed in block #${receipt.blockNumber}`);
   } catch (err) {
     console.error("[NexusGuard] ❌  Transaction reverted on-chain:", err.message);
@@ -378,6 +390,102 @@ export async function triggerBounty(req, res) {
 }
 
 /**
+ * POST /api/web3/create-bounty
+ *
+ * Internal route — called by the orchestrator right after vulnerabilities are found.
+ * Creates a new bounty escrow on-chain (funds it with a small demo MATIC amount).
+ *
+ * This MUST be called before submitPatch() or releaseBounty().
+ *
+ * Expected body (from orchestrator):
+ * {
+ *   "bugId":   "NexusGuard-AI-HEAD",   // synthesized or provided
+ *   "repoName": "my-repo",              // optional, used to synthesize bugId
+ *   "commitSha": "abc12345"             // optional, used to synthesize bugId
+ * }
+ */
+export async function createBountyController(req, res) {
+  const { bugId, repoName, commitSha, bountyAmountEth } = req.body;
+
+  const resolvedBugId = (bugId ?? "").trim()
+    || `${repoName ?? "repo"}-${(commitSha ?? "").slice(0, 8)}`;
+
+  if (!resolvedBugId) {
+    return res.status(400).json({ success: false, error: "bugId (or repoName+commitSha) is required" });
+  }
+
+  // Demo bounty amount — 0.001 MATIC. In production this is set by the sponsor.
+  const amountWei = ethers.parseEther(bountyAmountEth ?? "0.001");
+
+  console.log(`[NexusGuard] 🏦 createBounty called`);
+  console.log(`             BugID  : ${resolvedBugId}`);
+  console.log(`             Amount : ${ethers.formatEther(amountWei)} MATIC (native)`);
+
+  // ── Check if bounty already exists (idempotent) ──────────────────────────
+  try {
+    const existing = await bountyContract.getBounty(resolvedBugId);
+    const existingStatus = BountyStatus[Number(existing.status)] ?? "UNKNOWN";
+    console.log(`[NexusGuard] ℹ️  Bounty already on-chain in status "${existingStatus}" — skipping createBounty.`);
+    return res.status(200).json({
+      success:  true,
+      message:  `Bounty already exists on-chain (status: ${existingStatus}). No action needed.`,
+      bugId:    resolvedBugId,
+      status:   existingStatus,
+      txHash:   null,
+      alreadyExisted: true,
+    });
+  } catch {
+    // Bounty does not exist — this is the expected path, continue to create it.
+  }
+
+  // ── Send createBounty() transaction ─────────────────────────────────────
+  let tx, receipt;
+  try {
+    console.log(`[NexusGuard] 📡 Sending createBounty() transaction...`);
+    tx = await bountyContract.createBounty(
+      resolvedBugId,
+      ethers.ZeroAddress, // NATIVE_TOKEN = address(0) → use MATIC
+      0,                  // amount ignored for native bounties (msg.value used)
+      { value: amountWei, nonce: await getFreshNonce() }  // fresh nonce always
+    );
+    console.log(`[NexusGuard] ⏳ createBounty tx submitted: ${tx.hash}`);
+    receipt = await tx.wait(1);
+    console.log(`[NexusGuard] ✅ createBounty confirmed in block #${receipt.blockNumber}`);
+  } catch (err) {
+    console.error(`[NexusGuard] ❌ createBounty() failed:`, err.message);
+
+    // Check for "already exists" race condition
+    if (err.message?.includes("bounty already exists")) {
+      return res.status(200).json({
+        success: true,
+        message: "Bounty already exists on-chain. No action needed.",
+        bugId:   resolvedBugId,
+        txHash:  null,
+        alreadyExisted: true,
+      });
+    }
+
+    return res.status(500).json({
+      success:  false,
+      error:    `createBounty transaction failed: ${err.message}`,
+      bugId:    resolvedBugId,
+      rawError: process.env.NODE_ENV === "development" ? err.message : undefined,
+    });
+  }
+
+  return res.status(200).json({
+    success:     true,
+    message:     "Bounty escrow created on-chain — status is now OPEN ✅",
+    txHash:      receipt.hash,
+    blockNumber: receipt.blockNumber,
+    explorerUrl: `https://amoy.polygonscan.com/tx/${receipt.hash}`,
+    bugId:       resolvedBugId,
+    amountMatic: ethers.formatEther(amountWei),
+    alreadyExisted: false,
+  });
+}
+
+/**
  * GET /api/web3/bounty/:bugId
  *
  * Public read endpoint — fetches the on-chain state of a bounty.
@@ -481,11 +589,15 @@ export async function submitPatchController(req, res) {
     });
   }
 
-  // ── Call submitPatch() on-chain ──────────────────────────────
+  // ── Call submitPatch() on-chain ────────────────────────────────────────
   let tx, receipt;
   try {
     console.log(`[NexusGuard] 📡 Sending submitPatch() transaction...`);
-    tx = await bountyContract.submitPatch(resolvedBugId, resolvedContributor);
+    tx = await bountyContract.submitPatch(
+      resolvedBugId,
+      resolvedContributor,
+      { nonce: await getFreshNonce() }  // fresh nonce always
+    );
     console.log(`[NexusGuard] ⏳ submitPatch tx submitted: ${tx.hash}`);
     receipt = await tx.wait(1); // 1 confirmation is enough for submit
     console.log(`[NexusGuard] ✅ submitPatch confirmed in block #${receipt.blockNumber}`);
