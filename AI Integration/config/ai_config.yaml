@@ -1,0 +1,76 @@
+# ============================================================
+#  NexusGuard AI — Configuration
+#  config/ai_config.yaml
+#
+#  Central configuration for Layer 3 (Exploit Reproduction)
+#  and Layer 4 (Patch Generator).
+# ============================================================
+
+# ── LLM Provider Settings ────────────────────────────────────
+# API keys are read from environment variables (never hardcoded).
+
+llm:
+  openai:
+    api_key_env: "OPENAI_API_KEY"
+    model: "gpt-4o-mini"
+    temperature: 0.2
+    max_tokens: 2048
+
+  anthropic:
+    api_key_env: "ANTHROPIC_API_KEY"
+    model: "claude-sonnet-4-20250514"
+    temperature: 0.2
+    max_tokens: 2048
+
+  gemini:
+    api_key_env: "GOOGLE_API_KEY"
+    model: "gemini-1.5-flash"        # gemini-2.0-flash hits free-tier quota; 1.5-flash is more generous
+    temperature: 0.2
+    max_tokens: 2048
+
+  groq:
+    api_key_env: "GROQ_API_KEY"
+    model: "llama-3.3-70b-versatile" # Groq free tier — very fast inference
+    temperature: 0.2
+    max_tokens: 2048
+
+# ── Default Provider ─────────────────────────────────────────
+# groq has the most generous free tier (no billing needed).
+# Override with DEFAULT_LLM_PROVIDER env var if needed.
+default_provider: "groq"
+
+# ── GitHub Integration ───────────────────────────────────────
+github:
+  token_env: "GITHUB_TOKEN"
+  default_base_branch: "main"
+  pr_reviewers: []                    # Add GitHub usernames to auto-request reviews
+  pr_labels:
+    - "security"
+    - "automated-patch"
+    - "nexusguard-ai"
+
+# ── Layer 5 (Blockchain Oracle) Integration ──────────────────
+layer5:
+  backend_url_env: "NEXUSGUARD_BACKEND_URL"
+  webhook_secret_env: "WEBHOOK_SECRET"
+  contract_address_env: "CONTRACT_ADDRESS"
+  rpc_url_env: "POLYGON_AMOY_RPC_URL"
+
+# ── BetterBugs Export ────────────────────────────────────────
+betterbugs:
+  export_dir: "./reports"
+  schema_version: "1.0"
+  include_screenshots: true
+
+# ── PoC Execution Settings ───────────────────────────────────
+poc_execution:
+  timeout_seconds: 30
+  sandbox_mode: "subprocess"          # "subprocess" | "docker"
+  docker_image: "python:3.11-slim"    # Used when sandbox_mode is "docker"
+
+# ── Reporting ────────────────────────────────────────────────
+reporting:
+  output_dir: "./reports"
+  formats:
+    - "markdown"
+    - "json"

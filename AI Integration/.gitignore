@@ -1,0 +1,27 @@
+# Environment variables (contains API keys — NEVER commit)
+.env
+
+# Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+dist/
+build/
+.pytest_cache/
+
+# Node
+node_modules/
+package-lock.json
+
+# IDE
+.vscode/
+.idea/
+
+# Reports (generated)
+ai_exploit_report.md
+betterbugs_export.json
+patch_output.json
+
+# OS
+.DS_Store
+Thumbs.db
