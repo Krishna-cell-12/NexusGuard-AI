@@ -8,6 +8,7 @@
  * Resulting public routes:
  *   GET  /api/web3/health              — Oracle liveness probe
  *   GET  /api/web3/bounty/:bugId       — On-chain bounty status (public read)
+ *   POST /api/web3/submit-patch        — Internal: transition bounty OPEN → SUBMITTED
  *   POST /api/web3/trigger-bounty      — Internal loopback (orchestrator → bounty release, no HMAC)
  *   POST /api/web3/webhook/merge       — External HMAC-authenticated bounty release
  */
@@ -16,6 +17,7 @@ import { Router } from "express";
 import {
   healthCheck,
   getBountyStatus,
+  submitPatchController,
   triggerBounty,
   handleMergeWebhook,
 } from "../controllers/bountyController.js";
@@ -27,6 +29,10 @@ router.get("/health", healthCheck);
 
 // ── On-chain bounty query ────────────────────────────────────────────────────
 router.get("/bounty/:bugId", getBountyStatus);
+
+// ── Internal: submit patch (OPEN → SUBMITTED) ───────────────────────────────
+// Called by the orchestrator after the AI service generates and creates a patch PR.
+router.post("/submit-patch", submitPatchController);
 
 // ── Internal loopback route (called by orchestrator — NO HMAC) ───────────────
 // This is intentionally not HMAC-gated: it is only reachable on localhost:3000

@@ -4,36 +4,51 @@
  * processVulnerabilityWorkflow() is the central pipeline that sequences:
  *   1. Security scanning       (scanner.js)
  *   2. AI patch generation     (AI microservice  → POST :8000)
- *   3. Web3 bounty release     (Web3 microservice → POST :8001)
- *   4. Frontend notification   (WebSocket broadcast + HTTP webhook fallback)
+ *   3. submitPatch on-chain    (built-in Web3 route → POST :3000)
+ *   4. Web3 bounty release     (built-in Web3 route → POST :3000)
+ *   5. Frontend notification   (WebSocket broadcast + HTTP webhook fallback)
  *
  * Every state transition is logged as a structured JSON line so you can
  * pinpoint exactly which step fails during the live demo.
  *
  * Env vars consumed (all optional — defaults shown):
- *   AI_SERVICE_URL      http://localhost:8000/api/ai/generate-patch
- *   WEB3_SERVICE_URL    http://localhost:8001/api/web3/trigger-bounty
+ *   AI_SERVICE_URL        http://localhost:8000/api/ai/generate-patch
+ *   SUBMIT_PATCH_URL      http://localhost:3000/api/web3/submit-patch
+ *   WEB3_SERVICE_URL      http://localhost:3000/api/web3/trigger-bounty
  *   FRONTEND_WEBHOOK_URL  (optional HTTP fallback when no WS clients connected)
- *   HTTP_TIMEOUT_MS     10000
+ *   HTTP_TIMEOUT_MS       10000   (general HTTP timeout)
+ *   AI_TIMEOUT_MS         120000  (longer timeout for LLM + PR creation)
+ *   REPO_FULL_NAME        owner/repo  (optional: enables GitHub PR creation)
  */
 
 import axios from "axios";
 import { rm } from "fs/promises";
 import { cloneRepository, runSemgrep, runTruffleHog } from "./scanner.js";
 import { runDynamicAnalysis } from "./sandbox.js";
-import { runStore } from "./store.js";
+import { runStore, computeScore } from "./store.js";
 
 // ─── Config ───────────────────────────────────────────────────────────────────
 
 const AI_SERVICE_URL =
   process.env.AI_SERVICE_URL ?? "http://localhost:8000/api/ai/generate-patch";
 
+// submit-patch transitions the bounty from OPEN → SUBMITTED on-chain
+const SUBMIT_PATCH_URL =
+  process.env.SUBMIT_PATCH_URL ?? "http://localhost:3000/api/web3/submit-patch";
+
 const WEB3_SERVICE_URL =
   process.env.WEB3_SERVICE_URL ?? "http://localhost:3000/api/web3/trigger-bounty";
 
 const FRONTEND_WEBHOOK_URL = process.env.FRONTEND_WEBHOOK_URL ?? null;
 
+// General HTTP timeout (web3 calls, frontend webhook, etc.)
 const HTTP_TIMEOUT_MS = Number(process.env.HTTP_TIMEOUT_MS ?? 10_000);
+
+// Extended timeout for AI service (LLM + optional GitHub PR creation = up to 2 min)
+const AI_TIMEOUT_MS = Number(process.env.AI_TIMEOUT_MS ?? 120_000);
+
+// Optional: full GitHub repo name (enables PR creation in the AI service)
+const REPO_FULL_NAME = process.env.REPO_FULL_NAME ?? null;
 
 // ─── Pipeline State Enum ─────────────────────────────────────────────────────
 
@@ -42,17 +57,19 @@ const HTTP_TIMEOUT_MS = Number(process.env.HTTP_TIMEOUT_MS ?? 10_000);
  * Lets you grep a log stream with `grep '"state"' server.log` during a demo.
  */
 export const PipelineState = Object.freeze({
-  STARTED:          "STARTED",
-  SCANNING:         "SCANNING",
-  SCAN_COMPLETE:    "SCAN_COMPLETE",
-  NO_VULNS_FOUND:   "NO_VULNS_FOUND",
-  REQUESTING_PATCH: "REQUESTING_PATCH",
-  PATCH_RECEIVED:   "PATCH_RECEIVED",
-  TRIGGERING_BOUNTY:"TRIGGERING_BOUNTY",
-  BOUNTY_RELEASED:  "BOUNTY_RELEASED",
-  NOTIFYING_UI:     "NOTIFYING_UI",
-  COMPLETED:        "COMPLETED",
-  FAILED:           "FAILED",
+  STARTED:           "STARTED",
+  SCANNING:          "SCANNING",
+  SCAN_COMPLETE:     "SCAN_COMPLETE",
+  NO_VULNS_FOUND:    "NO_VULNS_FOUND",
+  REQUESTING_PATCH:  "REQUESTING_PATCH",
+  PATCH_RECEIVED:    "PATCH_RECEIVED",
+  SUBMITTING_PATCH:  "SUBMITTING_PATCH",   // NEW: registerring patch on-chain
+  PATCH_SUBMITTED:   "PATCH_SUBMITTED",    // NEW: bounty OPEN → SUBMITTED
+  TRIGGERING_BOUNTY: "TRIGGERING_BOUNTY",
+  BOUNTY_RELEASED:   "BOUNTY_RELEASED",
+  NOTIFYING_UI:      "NOTIFYING_UI",
+  COMPLETED:         "COMPLETED",
+  FAILED:            "FAILED",
 });
 
 // ─── WebSocket Registry ───────────────────────────────────────────────────────
@@ -279,15 +296,26 @@ export async function processVulnerabilityWorkflow(repoDetails) {
   const transition = (state, message, meta = {}) => {
     result.finalState = state;
     log.info(state, message, meta);
-    // Persist to in-memory store so GET /api/status/:runId returns live state.
+    // Persist to in-memory store so GET /api/status/:runId and GET /api/runs return live data.
     runStore.set(runId, {
       runId,
       state,
       message,
-      updatedAt: new Date().toISOString(),
-      startedAt: result.startedAt ?? (result.startedAt = new Date().toISOString()),
-      repoName: repoDetails.repoName,
-      commitSha: repoDetails.commitSha,
+      updatedAt:  new Date().toISOString(),
+      startedAt:  result.startedAt ?? (result.startedAt = new Date().toISOString()),
+      repoName:   repoDetails.repoName,
+      commitSha:  repoDetails.commitSha,
+      senderLogin: repoDetails.senderLogin,
+      // Rich data for dashboard panels (populated as pipeline progresses)
+      scanReport:      result.vulnerabilityReport ?? undefined,
+      patchResult:     result.patchCode ? {
+        patchCode:    result.patchCode,
+        explanation:  result.patchExplanation,
+        prUrl:        meta.prUrl    ?? undefined,
+        prNumber:     meta.prNumber ?? undefined,
+      } : undefined,
+      blockchainResult: result.bountyReceipt ?? undefined,
+      error: result.error ?? undefined,
       ...meta,
     });
     broadcastToClients({ event: "PIPELINE_STATE", runId, state, message, ...meta });
@@ -308,6 +336,9 @@ export async function processVulnerabilityWorkflow(repoDetails) {
 
     const vulnerabilityReport = await runScanners(repoDetails);
     result.vulnerabilityReport = vulnerabilityReport;
+
+    // Compute security score immediately after scan — updates /api/score/:repo
+    computeScore(repoDetails.repoName, vulnerabilityReport);
 
     transition(PipelineState.SCAN_COMPLETE, "Scan finished.", {
       totalVulnerabilities: vulnerabilityReport.summary.totalVulnerabilities,
@@ -340,11 +371,28 @@ export async function processVulnerabilityWorkflow(repoDetails) {
       }
     );
 
-    const aiResponse = await http("AI Patch Service").post(AI_SERVICE_URL, {
-      vulnerabilityReport,
+    // Use the extended AI timeout — LLM calls + optional GitHub PR creation
+    // can take up to 2 minutes.
+    const aiClient = axios.create({
+      timeout: AI_TIMEOUT_MS,
+      headers: { "Content-Type": "application/json" },
     });
 
-    const { patchCode, explanation: patchExplanation } = aiResponse.data;
+    const aiResponse = await aiClient.post(AI_SERVICE_URL, {
+      vulnerabilityReport,
+      // Pass repoFullName so the AI service can optionally create a GitHub PR.
+      repoFullName: REPO_FULL_NAME,
+      // Pass oracle address as fallback contributor wallet for submitPatch.
+      contributorWalletAddress: process.env.ORACLE_ADDRESS ?? null,
+    });
+
+    // The AI service returns: patchCode, explanation, prTitle, prBody, prUrl, prNumber
+    const {
+      patchCode,
+      explanation: patchExplanation,
+      prUrl,
+      prNumber,
+    } = aiResponse.data;
 
     if (!patchCode) {
       throw new Error("AI service returned a response but 'patchCode' field is missing.");
@@ -354,11 +402,48 @@ export async function processVulnerabilityWorkflow(repoDetails) {
     result.patchExplanation = patchExplanation ?? null;
 
     transition(PipelineState.PATCH_RECEIVED, "AI patch received.", {
-      patchLength:  patchCode.length,
+      patchLength:    patchCode.length,
       hasExplanation: Boolean(patchExplanation),
+      prUrl:          prUrl ?? null,
+      prNumber:       prNumber ?? null,
     });
 
-    // ── Step 4: Trigger Web3 Bounty ─────────────────────────────────────────
+    // ── Step 3b: Submit Patch on-chain (OPEN → SUBMITTED) ───────────────────
+    // This MUST happen before releaseBounty() — the contract requires the
+    // bounty to be in SUBMITTED state before it can be released.
+
+    transition(PipelineState.SUBMITTING_PATCH,
+      "Registering patch on-chain (submitPatch)...", {
+        endpoint: SUBMIT_PATCH_URL,
+        repoName: repoDetails.repoName,
+      }
+    );
+
+    try {
+      const submitResponse = await http("Submit Patch").post(SUBMIT_PATCH_URL, {
+        repoName:    repoDetails.repoName,
+        commitSha:   repoDetails.commitSha,
+        senderLogin: repoDetails.senderLogin,
+        patchCode,
+        prUrl:       prUrl ?? null,
+        prNumber:    prNumber ?? null,
+      });
+
+      transition(PipelineState.PATCH_SUBMITTED, "Patch registered on-chain.", {
+        submitTxHash: submitResponse.data?.txHash ?? "unknown",
+      });
+    } catch (submitErr) {
+      // submitPatch failing is non-fatal for the demo — log and continue.
+      // The bounty may already be in SUBMITTED state from a previous run,
+      // or the contract may not have a bounty created yet.
+      log.warn(
+        PipelineState.SUBMITTING_PATCH,
+        "submitPatch call failed (non-fatal — continuing to bounty release).",
+        { error: submitErr.message }
+      );
+    }
+
+    // ── Step 4: Trigger Web3 Bounty Release ─────────────────────────────────
 
     transition(PipelineState.TRIGGERING_BOUNTY,
       "Triggering Web3 bounty release...", {
@@ -372,6 +457,8 @@ export async function processVulnerabilityWorkflow(repoDetails) {
       commitSha:   repoDetails.commitSha,
       senderLogin: repoDetails.senderLogin,
       patchCode,
+      prUrl:       prUrl ?? null,
+      prNumber:    prNumber ?? null,
       report:      vulnerabilityReport.summary,
     });
 

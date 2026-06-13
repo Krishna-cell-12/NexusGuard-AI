@@ -11,7 +11,7 @@ import express from "express";
 import crypto from "crypto";
 import { createServer } from "http";
 import { WebSocketServer } from "ws";
-import { runStore } from "./store.js";
+import { runStore, scoreStore, computeScore } from "./store.js";
 import { processVulnerabilityWorkflow, registerWsServer } from "./orchestrator.js";
 import bountyRoutes from "./web3/routes/bountyRoutes.js";
 
@@ -64,6 +64,25 @@ app.use(
   })
 );
 
+// ─── CORS ─────────────────────────────────────────────────────────────────────
+// Allow the Next.js frontend (port 3001) and any configured origin to call APIs.
+const ALLOWED_ORIGINS = [
+  "http://localhost:3001",
+  "http://localhost:3000",
+  process.env.FRONTEND_ORIGIN ?? "",
+].filter(Boolean);
+
+app.use((req, res, next) => {
+  const origin = req.headers.origin;
+  if (!origin || ALLOWED_ORIGINS.includes(origin)) {
+    res.setHeader("Access-Control-Allow-Origin", origin ?? "*");
+  }
+  res.setHeader("Access-Control-Allow-Methods", "GET,POST,OPTIONS");
+  res.setHeader("Access-Control-Allow-Headers", "Content-Type,Authorization,X-NexusGuard-Signature");
+  if (req.method === "OPTIONS") return res.sendStatus(204);
+  next();
+});
+
 // ─── In-Memory Run Store ──────────────────────────────────────────────────────
 // Imported from store.js (shared with orchestrator.js) to avoid circular imports.
 // runStore: Map<runId, pipelineStateSnapshot>
@@ -96,6 +115,146 @@ app.get("/api/status/:runId", (req, res) => {
   }
   return res.status(200).json(entry);
 });
+
+// ─── Dashboard API: Security Command Center ───────────────────────────────────
+
+/**
+ * GET /api/runs
+ * Live vulnerability feed — returns the last N pipeline runs.
+ * Used by the dashboard's "Live Vulnerability Feeds" panel.
+ *
+ * Query params:
+ *   ?limit=20     — max runs to return (default 20)
+ *   ?repo=name    — filter by repo name
+ *   ?state=FAILED — filter by pipeline state
+ */
+app.get("/api/runs", (req, res) => {
+  const limit  = Math.min(parseInt(req.query.limit ?? "20", 10), 100);
+  const repo   = req.query.repo ?? null;
+  const state  = req.query.state ?? null;
+
+  let runs = [...runStore.values()]
+    .sort((a, b) => new Date(b.startedAt) - new Date(a.startedAt));
+
+  if (repo)  runs = runs.filter(r => r.repoName === repo);
+  if (state) runs = runs.filter(r => r.state === state);
+
+  runs = runs.slice(0, limit);
+
+  return res.status(200).json({
+    total:   runStore.size,
+    count:   runs.length,
+    runs,
+  });
+});
+
+/**
+ * GET /api/score/:repoName
+ * Project Security Score for the dashboard's score panel.
+ * Returns score 0-100, grade, and breakdown.
+ */
+app.get("/api/score/:repoName", (req, res) => {
+  const name  = req.params.repoName;
+  const entry = scoreStore.get(name);
+
+  if (!entry) {
+    // No scan yet — return a neutral score
+    return res.status(200).json({
+      repoName: name,
+      score:    null,
+      grade:    null,
+      message:  "No scan data available yet. Trigger a scan to get a score.",
+    });
+  }
+
+  return res.status(200).json(entry);
+});
+
+/**
+ * GET /api/scores
+ * Returns security scores for all repos that have been scanned.
+ */
+app.get("/api/scores", (_req, res) => {
+  const scores = [...scoreStore.values()]
+    .sort((a, b) => a.score - b.score); // worst first
+  return res.status(200).json({ count: scores.length, scores });
+});
+
+/**
+ * GET /api/patches
+ * Patch Status Tracking — all runs that reached PATCH_RECEIVED or beyond.
+ */
+app.get("/api/patches", (req, res) => {
+  const limit = Math.min(parseInt(req.query.limit ?? "20", 10), 100);
+
+  const PATCH_STATES = new Set([
+    "PATCH_RECEIVED", "SUBMITTING_PATCH", "PATCH_SUBMITTED",
+    "TRIGGERING_BOUNTY", "BOUNTY_RELEASED", "COMPLETED",
+  ]);
+
+  const patches = [...runStore.values()]
+    .filter(r => PATCH_STATES.has(r.state) || r.patchResult)
+    .sort((a, b) => new Date(b.updatedAt ?? b.startedAt) - new Date(a.updatedAt ?? a.startedAt))
+    .slice(0, limit)
+    .map(r => ({
+      runId:      r.runId,
+      repoName:   r.repoName,
+      commitSha:  r.commitSha,
+      state:      r.state,
+      prUrl:      r.patchResult?.prUrl ?? null,
+      prNumber:   r.patchResult?.prNumber ?? null,
+      patchedAt:  r.updatedAt,
+      txHash:     r.blockchainResult?.txHash ?? null,
+      explorerUrl: r.blockchainResult?.explorerUrl ?? null,
+    }));
+
+  return res.status(200).json({ count: patches.length, patches });
+});
+
+/**
+ * POST /api/scan/manual
+ * Trigger a manual scan from the dashboard (no GitHub webhook needed).
+ *
+ * Body: { cloneUrl, commitSha?, repoName?, senderLogin? }
+ */
+app.post("/api/scan/manual", (req, res) => {
+  const { cloneUrl, commitSha = "HEAD", repoName, senderLogin = "dashboard" } = req.body ?? {};
+
+  if (!cloneUrl) {
+    return res.status(400).json({ error: "'cloneUrl' is required." });
+  }
+
+  const resolvedRepo = repoName ?? cloneUrl.split("/").pop()?.replace(".git", "") ?? "unknown";
+
+  log.info("Manual scan triggered.", { cloneUrl, commitSha, repoName: resolvedRepo, senderLogin });
+
+  // Non-blocking — same as GitHub webhook path
+  processVulnerabilityWorkflow({
+    cloneUrl,
+    commitSha,
+    repoName:    resolvedRepo,
+    senderLogin,
+  })
+    .then((result) => {
+      // Compute score after scan completes
+      const run = runStore.get(result.runId);
+      if (run?.scanReport) {
+        computeScore(resolvedRepo, run.scanReport);
+      }
+      log.info("Manual scan completed.", { runId: result.runId, state: result.finalState });
+    })
+    .catch((err) => {
+      log.error("Manual scan failed.", { error: err.message });
+    });
+
+  return res.status(202).json({
+    message:  "Manual scan queued.",
+    cloneUrl,
+    repoName: resolvedRepo,
+    commitSha,
+  });
+});
+
 
 // ─── Middleware: HMAC-SHA256 Signature Verification ───────────────────────────
 

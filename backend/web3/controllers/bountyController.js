@@ -415,6 +415,104 @@ export async function getBountyStatus(req, res) {
 }
 
 /**
+ * POST /api/web3/submit-patch
+ *
+ * Internal route — called by the orchestrator after AI generates a patch PR.
+ * Transitions the bounty from OPEN → SUBMITTED on-chain by calling submitPatch().
+ *
+ * Expected body:
+ * {
+ *   "bugId":                    "NEXUS-reponame-abc12345",  // synthesized or provided
+ *   "contributorWalletAddress": "0xABCD...1234",            // patch author
+ *   "repoName":                 "my-repo",                  // from scan context
+ *   "commitSha":                "abc123",                   // from scan context
+ *   "prUrl":                    "https://github.com/...",   // optional
+ *   "prNumber":                 42                          // optional
+ * }
+ */
+export async function submitPatchController(req, res) {
+  const {
+    bugId,
+    contributorWalletAddress,
+    repoName,
+    commitSha,
+    prUrl,
+    prNumber,
+  } = req.body;
+
+  // Resolve bugId — synthesize from repo+commit if not provided.
+  const resolvedBugId = bugId?.trim()
+    || `NEXUS-${repoName ?? "repo"}-${(commitSha ?? "").slice(0, 8)}`;
+
+  const resolvedContributor = contributorWalletAddress
+    || process.env.ORACLE_ADDRESS;
+
+  if (!resolvedContributor || !ethers.isAddress(resolvedContributor)) {
+    return res.status(400).json({
+      success: false,
+      error: "contributorWalletAddress is required and must be a valid Ethereum address",
+    });
+  }
+
+  console.log(`[NexusGuard] 📝 submitPatch called`);
+  console.log(`             BugID       : ${resolvedBugId}`);
+  console.log(`             Contributor : ${resolvedContributor}`);
+  console.log(`             PR          : #${prNumber ?? "N/A"} — ${prUrl ?? "N/A"}`);
+
+  // ── Check on-chain bounty state ─────────────────────────────
+  let onChainStatus = "UNKNOWN";
+  try {
+    const bounty = await bountyContract.getBounty(resolvedBugId);
+    onChainStatus = BountyStatus[Number(bounty.status)] ?? "UNKNOWN";
+  } catch {
+    // Bounty may not exist yet — that's fine, submitPatch will create it implicitly
+    // or fail gracefully. The orchestrator treats submitPatch failures as non-fatal.
+    console.log(`[NexusGuard] ℹ️  Bounty "${resolvedBugId}" not found on-chain — may be first submission.`);
+  }
+
+  if (onChainStatus === "SUBMITTED" || onChainStatus === "PAID") {
+    // Idempotent: already in the right state
+    return res.status(200).json({
+      success: true,
+      message: `Bounty is already in "${onChainStatus}" state. No action needed.`,
+      bugId:   resolvedBugId,
+      status:  onChainStatus,
+      txHash:  null,
+    });
+  }
+
+  // ── Call submitPatch() on-chain ──────────────────────────────
+  let tx, receipt;
+  try {
+    console.log(`[NexusGuard] 📡 Sending submitPatch() transaction...`);
+    tx = await bountyContract.submitPatch(resolvedBugId, resolvedContributor);
+    console.log(`[NexusGuard] ⏳ submitPatch tx submitted: ${tx.hash}`);
+    receipt = await tx.wait(1); // 1 confirmation is enough for submit
+    console.log(`[NexusGuard] ✅ submitPatch confirmed in block #${receipt.blockNumber}`);
+  } catch (err) {
+    console.error(`[NexusGuard] ❌ submitPatch() failed:`, err.message);
+    return res.status(500).json({
+      success:  false,
+      error:    `submitPatch transaction failed: ${err.message}`,
+      bugId:    resolvedBugId,
+      rawError: process.env.NODE_ENV === "development" ? err.message : undefined,
+    });
+  }
+
+  return res.status(200).json({
+    success:     true,
+    message:     "Patch submitted on-chain — bounty is now SUBMITTED 🎉",
+    txHash:      receipt.hash,
+    blockNumber: receipt.blockNumber,
+    explorerUrl: `https://amoy.polygonscan.com/tx/${receipt.hash}`,
+    bugId:       resolvedBugId,
+    contributor: resolvedContributor,
+    prUrl:       prUrl ?? null,
+    prNumber:    prNumber ?? null,
+  });
+}
+
+/**
  * GET /api/web3/health
  *
  * Oracle liveness probe — returns wallet address, balance, and current block.
