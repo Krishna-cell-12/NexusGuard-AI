@@ -1,0 +1,35 @@
+{
+  "name": "nexusguard-bounty",
+  "version": "1.0.0",
+  "description": "NexusGuard AI — Layer 5: Blockchain & Bounty Layer",
+  "scripts": {
+    "compile":         "hardhat compile",
+    "test":            "hardhat test",
+    "test:coverage":   "hardhat coverage",
+    "deploy:amoy":     "hardhat run scripts/deploy.js --network polygonAmoy",
+    "deploy:mainnet":  "hardhat run scripts/deploy.js --network polygon",
+    "deploy:local":    "hardhat run scripts/deploy.js --network hardhat",
+    "node":            "hardhat node",
+    "verify":          "hardhat verify",
+    "gas-report":      "REPORT_GAS=true hardhat test",
+    "backend:dev":     "node backend/server.js",
+    "lint":            "eslint contracts/ scripts/ backend/ --ext .js,.sol",
+    "clean":           "hardhat clean"
+  },
+  "devDependencies": {
+    "@nomicfoundation/hardhat-toolbox": "^5.0.0",
+    "@nomicfoundation/hardhat-verify":  "^2.0.0",
+    "hardhat":                          "^2.22.0",
+    "chai":                             "^4.3.0",
+    "dotenv":                           "^16.4.0"
+  },
+  "dependencies": {
+    "@openzeppelin/contracts": "^5.0.0",
+    "ethers":                  "^6.13.0",
+    "express":                 "^4.19.0",
+    "dotenv":                  "^16.4.0",
+    "cors":                    "^2.8.5",
+    "helmet":                  "^7.1.0",
+    "morgan":                  "^1.10.0"
+  }
+}

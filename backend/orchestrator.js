@@ -29,7 +29,7 @@ const AI_SERVICE_URL =
   process.env.AI_SERVICE_URL ?? "http://localhost:8000/api/ai/generate-patch";
 
 const WEB3_SERVICE_URL =
-  process.env.WEB3_SERVICE_URL ?? "http://localhost:8001/api/web3/trigger-bounty";
+  process.env.WEB3_SERVICE_URL ?? "http://localhost:3000/api/web3/trigger-bounty";
 
 const FRONTEND_WEBHOOK_URL = process.env.FRONTEND_WEBHOOK_URL ?? null;
 

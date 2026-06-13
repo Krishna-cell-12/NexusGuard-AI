@@ -13,6 +13,7 @@ import { createServer } from "http";
 import { WebSocketServer } from "ws";
 import { runStore } from "./store.js";
 import { processVulnerabilityWorkflow, registerWsServer } from "./orchestrator.js";
+import bountyRoutes from "./web3/routes/bountyRoutes.js";
 
 // ─── Constants ───────────────────────────────────────────────────────────────
 
@@ -273,6 +274,21 @@ app.post("/api/webhook/github", verifyGitHubSignature, (req, res) => {
     ...scanContext,
   });
 });
+
+// ─── Web3 / Blockchain Oracle Routes ────────────────────────────────────────
+
+/**
+ * All Yadnesh's blockchain routes are mounted here.
+ * The existing express.json() verify callback above already populates
+ * req.rawBody (Buffer) which bountyController uses for HMAC verification.
+ *
+ * Routes exposed:
+ *   GET  /api/web3/health          — Oracle wallet liveness probe
+ *   GET  /api/web3/bounty/:bugId   — On-chain bounty state (public)
+ *   POST /api/web3/trigger-bounty  — Internal loopback from orchestrator
+ *   POST /api/web3/webhook/merge   — External HMAC-authenticated release
+ */
+app.use("/api/web3", bountyRoutes);
 
 // ─── Global Error Handler ─────────────────────────────────────────────────────
 
