@@ -17,7 +17,8 @@ GitHub Event (push / PR)
            │
            ▼
 ┌───────────────────────────────────────────┐
-│   orchestrator.js  — processVulnerabilityWorkflow()        │
+│   orchestrator.js                         │
+│   processVulnerabilityWorkflow()          │
 │                                           │
 │  ┌─────────────────────────────────────┐  │
 │  │ runScanners() — single git clone    │  │
@@ -27,11 +28,11 @@ GitHub Event (push / PR)
 │  └─────────────────────────────────────┘  │
 │           │                               │
 │           ▼  (findings exist?)            │
-│  POST :8000  AI Microservice             │
-│           │  (patchCode + explanation)    │
+│  POST :8000  AI Microservice              │
+│           │  (patchCode + explanation)     │
 │           ▼                               │
-│  POST :8001  Web3 Microservice           │
-│           │  (bounty tx receipt)          │
+│  POST :8001  Web3 Microservice            │
+│           │  (bounty tx receipt)           │
 │           ▼                               │
 │  WebSocket broadcast → Frontend dashboard │
 └───────────────────────────────────────────┘
@@ -44,15 +45,27 @@ GitHub Actions CI (on every push / PR):
 
 ---
 
-## File Map
+## Project Structure
 
-| File | Role |
-|---|---|
-| `server.js` | Express server, GitHub webhook receiver, HMAC verification, WebSocket server |
-| `orchestrator.js` | Pipeline controller: scan → AI → Web3 → notify frontend |
-| `scanner.js` | Semgrep + TruffleHog runners, git clone helper |
-| `sandbox.js` | Docker dynamic analysis — network-disabled container, 30 s timeout |
-| `.github/workflows/nexusguard-ci.yml` | GitHub Actions: Semgrep, TruffleHog, webhook notify |
+```
+NexusGuard-AI/
+├── .github/
+│   └── workflows/
+│       └── nexusguard-ci.yml          # GitHub Actions: Semgrep + TruffleHog + webhook
+├── backend/
+│   ├── server.js                      # Express server, webhook receiver, WebSocket, /health
+│   ├── orchestrator.js                # Pipeline: scan → AI → Web3 → notify frontend
+│   ├── scanner.js                     # Semgrep + TruffleHog + git clone helpers
+│   ├── sandbox.js                     # Docker dynamic analysis sandbox
+│   ├── store.js                       # Shared in-memory run store
+│   ├── scripts/
+│   │   └── setup-webhook.js           # Auto-configure GitHub webhook via REST API
+│   ├── package.json
+│   ├── .env.example
+│   └── .env                           # Your local config (git-ignored)
+├── README.md
+└── .gitignore
+```
 
 ---
 
@@ -62,8 +75,8 @@ GitHub Actions CI (on every push / PR):
 |---|---|
 | Node.js ≥ 20.6 | [nvm](https://github.com/nvm-sh/nvm): `nvm install 22` |
 | Docker | `sudo apt install docker.io && sudo usermod -aG docker $USER` |
-| Semgrep | `pip install semgrep` |
-| TruffleHog | `pip install trufflehog` or [GitHub releases](https://github.com/trufflesecurity/trufflehog/releases) |
+| Semgrep | `pip install --user semgrep` |
+| TruffleHog | [GitHub releases](https://github.com/trufflesecurity/trufflehog/releases) or `pip install trufflehog` |
 | git | `sudo apt install git` |
 
 ---
@@ -73,10 +86,11 @@ GitHub Actions CI (on every push / PR):
 ### 1. Clone and install
 
 ```bash
-git clone https://github.com/your-org/NexusGuard-AI.git
-cd NexusGuard-AI
-node /path/to/nvm/npm install
-# On WSL2 (Windows PATH bleeds in): use nvm's npm explicitly
+git clone https://github.com/Krishna-cell-12/NexusGuard-AI.git
+cd NexusGuard-AI/backend
+npm install
+
+# On WSL2 (Windows PATH issue): use nvm's npm explicitly
 node ~/.nvm/versions/node/$(node --version)/lib/node_modules/npm/bin/npm-cli.js install
 ```
 
@@ -99,6 +113,7 @@ cp .env.example .env
 ### 3. Start the server
 
 ```bash
+cd backend
 npm run dev       # hot-reload via node --watch
 npm start         # production
 ```
@@ -108,19 +123,22 @@ Server starts on `http://localhost:3000`. WebSocket endpoint: `ws://localhost:30
 ### 4. Expose with ngrok (for GitHub webhooks during development)
 
 ```bash
-# Install ngrok via apt (recommended for WSL2, avoids snap issues)
-curl -sSL https://ngrok-agent.s3.amazonaws.com/ngrok.asc | sudo tee /etc/apt/trusted.gpg.d/ngrok.asc >/dev/null
-echo "deb https://ngrok-agent.s3.amazonaws.com buster main" | sudo tee /etc/apt/sources.list.d/ngrok.list
-sudo apt update && sudo apt install ngrok
-
-ngrok config add-authtoken <YOUR_TOKEN>   # from dashboard.ngrok.com
 ngrok http 3000
 ```
 
-Copy the `https://<id>.ngrok.io` URL — use it as the webhook URL in the next step.
+Copy the `https://<id>.ngrok-free.app` URL — use it as the webhook URL.
 
 ### 5. Register a GitHub Webhook
 
+**Option A — Automated (recommended):**
+```bash
+cd backend
+GITHUB_TOKEN=ghp_xxx npm run webhook:setup
+# or with a custom ngrok URL:
+GITHUB_TOKEN=ghp_xxx node scripts/setup-webhook.js https://your-url.ngrok-free.app
+```
+
+**Option B — Manual:**
 1. Go to your repo → **Settings → Webhooks → Add webhook**
 2. **Payload URL**: `https://<your-ngrok-url>/api/webhook/github`
 3. **Content type**: `application/json`
@@ -202,7 +220,7 @@ ws.onmessage = ({ data }) => {
 
 ---
 
-## Pipeline States (for log filtering)
+## Pipeline States
 
 ```
 STARTED → SCANNING → SCAN_COMPLETE
@@ -218,14 +236,9 @@ STARTED → SCANNING → SCAN_COMPLETE
                         FAILED
 ```
 
-**Demo tip — grep logs by state:**
+**Demo tip — tail logs in real-time:**
 ```bash
-npm run dev 2>&1 | grep '"state"'
-```
-
-**Demo tip — filter by a single pipeline run:**
-```bash
-npm run dev 2>&1 | grep '"run_1718264400000_a8xqz"'
+cd backend && npm run dev 2>&1 | grep '"state"'
 ```
 
 ---
@@ -236,9 +249,4 @@ If `npm install` fails with `UNC paths are not supported`, your shell is picking
 
 ```bash
 node ~/.nvm/versions/node/$(node --version)/lib/node_modules/npm/bin/npm-cli.js install
-```
-
-Or add this to `~/.bashrc` to permanently fix the PATH:
-```bash
-export PATH="$HOME/.nvm/versions/node/v22.22.3/bin:$PATH"
 ```
