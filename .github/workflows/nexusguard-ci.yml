@@ -1,0 +1,153 @@
+name: NexusGuard Security Pipeline
+
+# ─── Triggers ─────────────────────────────────────────────────────────────────
+on:
+  push:
+    branches: [main, master, develop]
+  pull_request:
+    branches: [main, master]
+    types: [opened, synchronize, reopened]
+
+# Cancel any in-progress run for the same branch to avoid duplicate scans.
+concurrency:
+  group: nexusguard-${{ github.ref }}
+  cancel-in-progress: true
+
+# ─── Jobs ─────────────────────────────────────────────────────────────────────
+jobs:
+
+  # ── Job 1: Static Analysis (Semgrep) ────────────────────────────────────────
+  semgrep:
+    name: Static Analysis — Semgrep
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      security-events: write   # needed to upload SARIF results
+      pull-requests: write     # needed to post PR comments
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0   # full history so Semgrep can diff against base branch
+
+      - name: Run Semgrep
+        uses: semgrep/semgrep-action@v1
+        id: semgrep
+        with:
+          config: auto
+          # Emit SARIF so GitHub Security tab shows the results natively.
+          generateSarif: "1"
+        env:
+          SEMGREP_APP_TOKEN: ${{ secrets.SEMGREP_APP_TOKEN }}
+
+      - name: Upload SARIF to GitHub Security tab
+        if: always()
+        uses: github/codeql-action/upload-sarif@v3
+        with:
+          sarif_file: semgrep.sarif
+        continue-on-error: true   # Don't fail the build if SARIF upload errors
+
+  # ── Job 2: Secret Detection (TruffleHog) ────────────────────────────────────
+  trufflehog:
+    name: Secret Detection — TruffleHog
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      pull-requests: write
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Run TruffleHog (verified secrets only)
+        uses: trufflesecurity/trufflehog@main
+        with:
+          path: ./
+          # On PRs, only scan the diff. On push, scan full history.
+          base: ${{ github.event_name == 'pull_request' && github.event.pull_request.base.sha || github.event.before }}
+          head: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.sha || github.sha }}
+          extra_args: --only-verified --fail
+
+  # ── Job 3: Notify NexusGuard API ────────────────────────────────────────────
+  # Fires after both scanners succeed. Sends a signed webhook payload to the
+  # NexusGuard backend so it can run the full AI + Web3 pipeline.
+  notify-nexusguard:
+    name: Trigger NexusGuard Pipeline
+    runs-on: ubuntu-latest
+    needs: [semgrep, trufflehog]
+    # Run even if scanners found issues — the API decides what to patch.
+    if: always() && vars.NEXUSGUARD_API_URL != ''
+    permissions:
+      contents: read
+
+    steps:
+      - name: Build and sign webhook payload
+        id: payload
+        env:
+          NEXUSGUARD_SECRET: ${{ secrets.NEXUSGUARD_WEBHOOK_SECRET }}
+          REPO_CLONE_URL: ${{ github.server_url }}/${{ github.repository }}.git
+          COMMIT_SHA: ${{ github.sha }}
+          REPO_NAME: ${{ github.repository }}
+          SENDER_LOGIN: ${{ github.actor }}
+          EVENT_NAME: ${{ github.event_name }}
+        run: |
+          # Build a minimal webhook payload matching GitHub's push event schema.
+          PAYLOAD=$(jq -nc \
+            --arg clone_url "$REPO_CLONE_URL" \
+            --arg name       "$REPO_NAME" \
+            --arg after      "$COMMIT_SHA" \
+            --arg login      "$SENDER_LOGIN" \
+            '{
+              repository: { name: $name, clone_url: $clone_url },
+              after:  $after,
+              sender: { login: $login }
+            }')
+
+          # Compute HMAC-SHA256 signature using the shared webhook secret.
+          SIG=$(printf '%s' "$PAYLOAD" | \
+                openssl dgst -sha256 -hmac "$NEXUSGUARD_SECRET" | \
+                sed 's/.* /sha256=/')
+
+          echo "payload=$PAYLOAD" >> "$GITHUB_OUTPUT"
+          echo "signature=$SIG"   >> "$GITHUB_OUTPUT"
+
+      - name: Check NexusGuard server is reachable
+        env:
+          API_URL: ${{ vars.NEXUSGUARD_API_URL }}
+        run: |
+          HTTP_STATUS=$(curl -s -o /dev/null -w "%{http_code}" "$API_URL/health")
+          if [ "$HTTP_STATUS" != "200" ]; then
+            echo "::warning::NexusGuard server returned HTTP $HTTP_STATUS — skipping notify."
+            exit 0
+          fi
+          echo "Server healthy."
+
+      - name: POST webhook to NexusGuard
+        env:
+          API_URL: ${{ vars.NEXUSGUARD_API_URL }}
+          PAYLOAD: ${{ steps.payload.outputs.payload }}
+          SIG: ${{ steps.payload.outputs.signature }}
+          RUN_ID: ${{ github.run_id }}
+        run: |
+          RESPONSE=$(curl -s -w "\n%{http_code}" \
+            -X POST "$API_URL/api/webhook/github" \
+            -H "Content-Type: application/json" \
+            -H "X-GitHub-Event: push" \
+            -H "X-GitHub-Delivery: gha-$RUN_ID" \
+            -H "X-Hub-Signature-256: $SIG" \
+            -d "$PAYLOAD")
+
+          HTTP_CODE=$(echo "$RESPONSE" | tail -1)
+          BODY=$(echo "$RESPONSE" | head -n -1)
+
+          echo "Response body : $BODY"
+          echo "HTTP status   : $HTTP_CODE"
+
+          if [ "$HTTP_CODE" != "202" ]; then
+            echo "::error::NexusGuard API returned HTTP $HTTP_CODE"
+            exit 1
+          fi
+          echo "Pipeline triggered successfully."
