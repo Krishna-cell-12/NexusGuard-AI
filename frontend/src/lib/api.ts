@@ -58,6 +58,15 @@ export interface PatchEntry {
   txHash?: string; explorerUrl?: string;
 }
 
+export interface ThreatEntry {
+  id: string;
+  source: string;
+  indicator: string;
+  severity: string;
+  timestamp: string;
+  status: string;
+}
+
 export interface HealthResponse { status: string; service: string; uptime: number; timestamp: string; }
 
 export const fetchers = {
@@ -65,6 +74,7 @@ export const fetchers = {
   runs:    (n = 20)      => api.get<{ total: number; count: number; runs: Run[] }>(`/api/runs?limit=${n}`),
   scores:  ()            => api.get<{ count: number; scores: ScoreEntry[] }>("/api/scores"),
   patches: (n = 20)      => api.get<{ count: number; patches: PatchEntry[] }>(`/api/patches?limit=${n}`),
+  threats: ()            => api.get<{ count: number; threats: ThreatEntry[] }>("/api/threats"),
   scanManual: (cloneUrl: string, repoName?: string, commitSha?: string) =>
     api.post("/api/scan/manual", { cloneUrl, repoName, commitSha }),
 };

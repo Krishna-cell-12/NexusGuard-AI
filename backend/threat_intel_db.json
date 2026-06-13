@@ -1,0 +1,34 @@
+[
+  {
+    "id": "INTEL-E68J3NA",
+    "source": "Exploit DB",
+    "indicator": "Remote Code Execution (RCE)",
+    "severity": "CRITICAL",
+    "timestamp": "2026-06-13T17:53:00.480Z",
+    "status": "ACTIVE"
+  },
+  {
+    "id": "INTEL-80V5CHV",
+    "source": "NVD (NVD NIST)",
+    "indicator": "SQL Injection in npm database driver",
+    "severity": "HIGH",
+    "timestamp": "2026-06-13T17:52:45.469Z",
+    "status": "ACTIVE"
+  },
+  {
+    "id": "INTEL-7A66S3Q",
+    "source": "Exploit DB",
+    "indicator": "Remote Code Execution (RCE)",
+    "severity": "CRITICAL",
+    "timestamp": "2026-06-13T17:52:30.460Z",
+    "status": "ACTIVE"
+  },
+  {
+    "id": "INTEL-RA4YP4S",
+    "source": "GitHub Security Advisory",
+    "indicator": "Prototype Pollution in lodash",
+    "severity": "MEDIUM",
+    "timestamp": "2026-06-13T17:52:15.458Z",
+    "status": "ACTIVE"
+  }
+]

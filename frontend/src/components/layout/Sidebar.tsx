@@ -8,6 +8,7 @@ import {
 const NAV = [
   { href: "/",         icon: BarChart2,  label: "Command Center" },
   { href: "/scan",     icon: Terminal,   label: "Manual Scan" },
+  { href: "/intel",    icon: Shield,     label: "Threat Intel" },
 ];
 
 export default function Sidebar() {

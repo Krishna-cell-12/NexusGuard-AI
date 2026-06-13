@@ -26,3 +26,4 @@ export const useRuns    = (n = 20)  => usePoll(() => fetchers.runs(n));
 export const useScores  = ()        => usePoll(() => fetchers.scores());
 export const usePatches = (n = 20)  => usePoll(() => fetchers.patches(n));
 export const useHealth  = ()        => usePoll(() => fetchers.health(), 10000);
+export const useThreats = ()        => usePoll(() => fetchers.threats(), 5000);

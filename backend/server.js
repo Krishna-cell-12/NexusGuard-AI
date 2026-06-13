@@ -14,6 +14,9 @@ import { WebSocketServer } from "ws";
 import { runStore, scoreStore, computeScore } from "./store.js";
 import { processVulnerabilityWorkflow, registerWsServer } from "./orchestrator.js";
 import bountyRoutes from "./web3/routes/bountyRoutes.js";
+import { promises as fs } from "fs";
+import { join } from "path";
+import { fetchThreatFeeds } from "./scripts/threat_intel.js";
 
 // ─── Constants ───────────────────────────────────────────────────────────────
 
@@ -463,7 +466,20 @@ app.use((err, req, res, _next) => {
   return res.status(500).json({ error: "Internal server error." });
 });
 
-// ─── HTTP + WebSocket Server ──────────────────────────────────────────────────
+/**
+ * GET /api/threats
+ * Returns crawled OSINT Threat Intelligence signatures.
+ */
+app.get("/api/threats", async (req, res) => {
+  try {
+    const filePath = join(process.cwd(), "threat_intel_db.json");
+    const content = await fs.readFile(filePath, "utf-8");
+    const threats = JSON.parse(content);
+    return res.status(200).json({ count: threats.length, threats });
+  } catch {
+    return res.status(200).json({ count: 0, threats: [] });
+  }
+});
 
 // Wrap Express in a raw http.Server so the WebSocket server can share the
 // same port via HTTP 'upgrade' — no second port needed.
@@ -478,6 +494,10 @@ httpServer.listen(PORT, () => {
     env: process.env.NODE_ENV ?? "development",
     wsEndpoint: `ws://localhost:${PORT}`,
   });
+  
+  // Start OSINT Threat Intelligence Background collection loop
+  fetchThreatFeeds();
+  setInterval(fetchThreatFeeds, 15000);
 });
 
 export default app;
