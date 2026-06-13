@@ -1,7 +1,13 @@
 "use client";
 import { useEffect, useRef, useState, useCallback } from "react";
 
-const WS_URL = process.env.NEXT_PUBLIC_WS_URL ?? "ws://localhost:3000";
+const getWsUrl = () => {
+  if (process.env.NEXT_PUBLIC_WS_URL) return process.env.NEXT_PUBLIC_WS_URL;
+  const backendUrl = process.env.NEXT_PUBLIC_BACKEND_URL || "http://localhost:3001";
+  return backendUrl.replace(/^http/, "ws");
+};
+
+const WS_URL = getWsUrl();
 
 export interface WsEvent {
   event: "PIPELINE_STATE" | "SCAN_COMPLETE" | "PIPELINE_FAILED";

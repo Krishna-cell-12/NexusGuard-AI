@@ -222,6 +222,10 @@ body {
 
 .card:hover { border-color: var(--border-glow); }
 
+.vuln-item:hover {
+  background: var(--bg-surface) !important;
+}
+
 .card-header {
   display: flex;
   align-items: center;
