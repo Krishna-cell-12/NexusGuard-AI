@@ -1,51 +1,52 @@
-/* ─── NexusGuard AI — Cyberpunk Design System ─────────────────────────── */
+/* ─── NexusGuard AI — Hacker Portal Design System ─────────────────────────── */
 @import url('https://fonts.googleapis.com/css2?family=Share+Tech+Mono&family=Fira+Code:wght@300;400;500;600;700&display=swap');
 
 /* ─── CSS Custom Properties ────────────────────────────────────────────── */
 :root {
   /* Colors */
-  --bg:            #020617;
-  --bg-card:       #0f172a;
-  --bg-surface:    #1e293b;
-  --bg-muted:      #1a1e2f;
-  --border:        #334155;
-  --border-glow:   #22c55e40;
+  --bg:            #020202;
+  --bg-card:       #080808;
+  --bg-surface:    #0f0f0f;
+  --bg-muted:      #050505;
+  --border:        #1f241d;
+  --border-glow:   #00ff6640;
 
-  --fg:            #f8fafc;
-  --fg-muted:      #94a3b8;
-  --fg-dim:        #475569;
+  --fg:            #e0ffe0;
+  --fg-muted:      #8cbe9d;
+  --fg-dim:        #3a5944;
 
-  --accent:        #22c55e;
-  --accent-dim:    #16a34a;
-  --accent-glow:   #22c55e33;
-  --cyan:          #06b6d4;
-  --cyan-glow:     #06b6d430;
-  --purple:        #a855f7;
-  --purple-glow:   #a855f730;
-  --red:           #ef4444;
-  --red-glow:      #ef444430;
-  --orange:        #f97316;
-  --yellow:        #eab308;
+  --accent:        #00ff66; /* Matrix / Hacker Green */
+  --accent-dim:    #00cc52;
+  --accent-glow:   #00ff6615;
+  --cyan:          #00e5ff;
+  --cyan-glow:     #00e5ff30;
+  --purple:        #d500f9;
+  --purple-glow:   #d500f930;
+  --red:           #ff003c;
+  --red-glow:      #ff003c30;
+  --orange:        #ff6c00;
+  --yellow:        #ffff00;
 
   /* Typography */
   --font-mono:     'Share Tech Mono', 'Courier New', monospace;
   --font-code:     'Fira Code', 'Courier New', monospace;
 
-  /* Spacing */
-  --radius:        6px;
-  --radius-lg:     10px;
+  /* Spacing (Sharp console boundaries) */
+  --radius:        0px;
+  --radius-lg:     0px;
 
   /* Shadows / Glows */
-  --glow-green:    0 0 20px #22c55e40, 0 0 40px #22c55e20;
-  --glow-cyan:     0 0 20px #06b6d440, 0 0 40px #06b6d420;
-  --glow-red:      0 0 20px #ef444440, 0 0 40px #ef444420;
-  --glow-purple:   0 0 20px #a855f740, 0 0 40px #a855f720;
-  --shadow-card:   0 4px 24px rgba(0,0,0,0.6);
+  --glow-green:    0 0 15px rgba(0,255,102,0.4), 0 0 30px rgba(0,255,102,0.2);
+  --glow-cyan:     0 0 15px rgba(0,229,255,0.4), 0 0 30px rgba(0,229,255,0.2);
+  --glow-red:      0 0 15px rgba(255,0,60,0.4), 0 0 30px rgba(255,0,60,0.2);
+  --glow-purple:   0 0 15px rgba(213,0,249,0.4), 0 0 30px rgba(213,0,249,0.2);
+  --glow-blue:     0 0 15px rgba(0,162,237,0.4), 0 0 30px rgba(0,162,237,0.2);
+  --shadow-card:   0 0 10px rgba(0, 0, 0, 0.95);
 
   /* Transitions */
-  --t-fast:        150ms ease;
-  --t-base:        250ms ease;
-  --t-slow:        400ms ease;
+  --t-fast:        100ms ease;
+  --t-base:        200ms ease;
+  --t-slow:        300ms ease;
 }
 
 /* ─── Reset & Base ─────────────────────────────────────────────────────── */
@@ -60,15 +61,11 @@ body {
   line-height: 1.6;
   min-height: 100dvh;
   overflow-x: hidden;
-  /* Scanline overlay */
+  /* Retro CRT scanlines + subtle green glow */
   background-image:
-    repeating-linear-gradient(
-      0deg,
-      transparent,
-      transparent 2px,
-      rgba(0, 255, 100, 0.015) 2px,
-      rgba(0, 255, 100, 0.015) 4px
-    );
+    linear-gradient(rgba(0, 255, 102, 0.008) 50%, transparent 50%),
+    repeating-linear-gradient(0deg, transparent, transparent 2px, rgba(0, 255, 102, 0.015) 2px, rgba(0, 255, 102, 0.015) 4px);
+  background-size: 100% 4px, 100% 4px;
 }
 
 /* ─── Scrollbar ────────────────────────────────────────────────────────── */

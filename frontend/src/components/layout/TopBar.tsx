@@ -20,7 +20,9 @@ export default function TopBar() {
   return (
     <header className="topbar">
       <div className="topbar-left">
-        <span className="topbar-title">NEXUSGUARD AI // SECURITY COMMAND CENTER</span>
+        <span className="topbar-title" style={{ display: "flex", alignItems: "center", gap: 8, fontWeight: 700, letterSpacing: "1px" }}>
+          <span style={{ color: "var(--accent)" }}>[NEXUSGUARD // EXPLOIT ORACLE]</span> COMMAND CENTER
+        </span>
       </div>
       <div className="topbar-right">
         <div style={{ display: "flex", alignItems: "center", gap: 6, fontFamily: "var(--font-mono)", fontSize: "0.75rem" }}>

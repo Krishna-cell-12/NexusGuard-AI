@@ -16,8 +16,8 @@ export default function Sidebar() {
     <aside className="sidebar">
       {/* Logo */}
       <div className="sidebar-logo">
-        <Shield size={20} />
-        <span>NexusGuard</span>
+        <Terminal size={18} style={{ marginRight: 8, color: "var(--accent)", filter: "drop-shadow(0 0 3px var(--accent))" }} />
+        <span style={{ fontWeight: 700, letterSpacing: "1px", fontFamily: "var(--font-mono)" }}>root@nexusguard:~#</span>
       </div>
 
       {/* Navigation */}
@@ -59,9 +59,12 @@ export default function Sidebar() {
 
       {/* Footer */}
       <div className="sidebar-footer">
-        <div style={{ marginBottom: 4 }}>v1.0.0 — Hackathon Build</div>
+        <div style={{ marginBottom: 8, fontStyle: "italic", fontSize: "0.58rem", color: "var(--fg-dim)", lineHeight: "1.3" }}>
+          "ALL YOUR BASE ARE BELONG TO US."
+        </div>
+        <div style={{ marginBottom: 4 }}>[SYSTEM STATUS: ESCALATED]</div>
         <div style={{ color: "var(--accent)", fontSize: "0.65rem" }}>
-          ● NEXUSGUARD AI ACTIVE
+          ● EXPLOIT ORACLE ONLINE
         </div>
       </div>
     </aside>
