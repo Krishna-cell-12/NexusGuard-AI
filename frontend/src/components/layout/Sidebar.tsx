@@ -6,8 +6,8 @@ import {
 } from "lucide-react";
 
 const NAV = [
-  { href: "/",         icon: BarChart2,  label: "Command Center" },
-  { href: "/scan",     icon: Terminal,   label: "Manual Scan" },
+  { href: "/", icon: BarChart2, label: "Command Center" },
+  { href: "/scan", icon: Terminal, label: "Manual Scan" },
 ];
 
 export default function Sidebar() {
@@ -17,7 +17,7 @@ export default function Sidebar() {
       {/* Logo */}
       <div className="sidebar-logo">
         <Terminal size={18} style={{ marginRight: 8, color: "var(--accent)", filter: "drop-shadow(0 0 3px var(--accent))" }} />
-        <span style={{ fontWeight: 700, letterSpacing: "1px", fontFamily: "var(--font-mono)" }}>root@nexusguard:~#</span>
+        <span style={{ fontWeight: 700, letterSpacing: "1px", fontFamily: "var(--font-mono)" }}>NexusGuard AI</span>
       </div>
 
       {/* Navigation */}
