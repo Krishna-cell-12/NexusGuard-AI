@@ -8,16 +8,18 @@ type PState = string;
 const STEPS = [
   { key: "STARTED",          label: "Started" },
   { key: "SCANNING",         label: "Scanning" },
+  { key: "VULNS_DETECTED",   label: "Analysis" },
   { key: "REQUESTING_PATCH", label: "AI Patch" },
-  { key: "PATCH_RECEIVED",   label: "Patched" },
   { key: "TRIGGERING_BOUNTY",label: "Bounty" },
   { key: "COMPLETED",        label: "Done" },
 ];
 
 const ORDER: Record<string, number> = {
-  STARTED: 0, SCANNING: 1, SCAN_COMPLETE: 1, NO_VULNS_FOUND: 5,
-  REQUESTING_PATCH: 2, PATCH_RECEIVED: 3, SUBMITTING_PATCH: 3, PATCH_SUBMITTED: 3,
-  TRIGGERING_BOUNTY: 4, BOUNTY_RELEASED: 4, NOTIFYING_UI: 5, COMPLETED: 5, FAILED: -1,
+  STARTED: 0,
+  SCANNING: 1, SCAN_COMPLETE: 1,
+  VULNS_DETECTED: 2,
+  REQUESTING_PATCH: 3, PATCH_RECEIVED: 3, SUBMITTING_PATCH: 3, PATCH_SUBMITTED: 3,
+  TRIGGERING_BOUNTY: 4, BOUNTY_RELEASED: 4, NOTIFYING_UI: 5, COMPLETED: 5, NO_VULNS_FOUND: 5, FAILED: -1,
 };
 
 function nodeStatus(stepIdx: number, currentIdx: number, failed: boolean) {
@@ -29,8 +31,8 @@ function nodeStatus(stepIdx: number, currentIdx: number, failed: boolean) {
 
 const STATE_BADGE: Record<string, string> = {
   STARTED: "badge-cyan", SCANNING: "badge-cyan", SCAN_COMPLETE: "badge-yellow",
-  NO_VULNS_FOUND: "badge-green", REQUESTING_PATCH: "badge-cyan", PATCH_RECEIVED: "badge-purple",
-  SUBMITTING_PATCH: "badge-purple", PATCH_SUBMITTED: "badge-purple",
+  NO_VULNS_FOUND: "badge-green", VULNS_DETECTED: "badge-orange", REQUESTING_PATCH: "badge-cyan",
+  PATCH_RECEIVED: "badge-purple", SUBMITTING_PATCH: "badge-purple", PATCH_SUBMITTED: "badge-purple",
   TRIGGERING_BOUNTY: "badge-orange", BOUNTY_RELEASED: "badge-green",
   NOTIFYING_UI: "badge-cyan", COMPLETED: "badge-green", FAILED: "badge-red",
 };

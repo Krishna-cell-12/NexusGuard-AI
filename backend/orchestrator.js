@@ -61,6 +61,7 @@ export const PipelineState = Object.freeze({
   SCANNING: "SCANNING",
   SCAN_COMPLETE: "SCAN_COMPLETE",
   NO_VULNS_FOUND: "NO_VULNS_FOUND",
+  VULNS_DETECTED: "VULNS_DETECTED",
   REQUESTING_PATCH: "REQUESTING_PATCH",
   PATCH_RECEIVED: "PATCH_RECEIVED",
   SUBMITTING_PATCH: "SUBMITTING_PATCH",   // NEW: registerring patch on-chain
@@ -350,16 +351,34 @@ export async function processVulnerabilityWorkflow(repoDetails) {
       hasFindings: vulnerabilityReport.hasFindings,
     });
 
-    // ── Step 2: Short-circuit if nothing found ──────────────────────────────
+    // ── Step 2: Detection Checkpoint ──────────────────────────────────────────
 
-    if (!vulnerabilityReport.hasFindings) {
+    const hasPatchableFindings =
+      vulnerabilityReport.vulnerabilities.some(
+        (v) => (v.severity ?? "").toUpperCase() === "ERROR" || (v.severity ?? "").toUpperCase() === "WARNING"
+      ) || vulnerabilityReport.secrets.length > 0;
+
+    if (!hasPatchableFindings) {
       transition(PipelineState.NO_VULNS_FOUND,
-        "No vulnerabilities or secrets detected. Pipeline complete — no patch required.",
-        { repoName: repoDetails.repoName }
+        `Clean Scan: No critical vulnerabilities or secrets detected in repository '${repoDetails.repoName}'.`,
+        {
+          totalVulnerabilities: vulnerabilityReport.summary.totalVulnerabilities,
+          totalSecrets: vulnerabilityReport.summary.totalSecrets,
+        }
       );
       result.success = true;
       return result;
     }
+
+    // Findings found — log detection status before requesting patch
+    transition(PipelineState.VULNS_DETECTED,
+      `Vulnerabilities detected: ${vulnerabilityReport.summary.totalVulnerabilities} static vulnerabilities, ` +
+      `${vulnerabilityReport.summary.totalSecrets} secrets found. Proceeding to AI remediation...`,
+      {
+        totalVulnerabilities: vulnerabilityReport.summary.totalVulnerabilities,
+        totalSecrets: vulnerabilityReport.summary.totalSecrets,
+      }
+    );
 
     // ── Step 3: Request AI Patch ────────────────────────────────────────────
 

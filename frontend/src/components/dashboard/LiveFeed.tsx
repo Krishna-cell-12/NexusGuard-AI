@@ -13,12 +13,14 @@ function stateColor(state?: string): string {
   if (state.includes("FAILED") || state.includes("ERROR")) return "red";
   if (state === "COMPLETED" || state === "BOUNTY_RELEASED") return "green";
   if (state === "SCANNING" || state === "REQUESTING_PATCH") return "cyan";
+  if (state === "VULNS_DETECTED") return "orange";
   return "muted";
 }
 
 const STATE_BADGE_MAP: Record<string, string> = {
   STARTED:           "badge-cyan",   SCANNING:          "badge-cyan",
   SCAN_COMPLETE:     "badge-yellow", NO_VULNS_FOUND:    "badge-green",
+  VULNS_DETECTED:    "badge-orange",
   REQUESTING_PATCH:  "badge-cyan",   PATCH_RECEIVED:    "badge-purple",
   SUBMITTING_PATCH:  "badge-purple", PATCH_SUBMITTED:   "badge-purple",
   TRIGGERING_BOUNTY: "badge-orange", BOUNTY_RELEASED:   "badge-green",

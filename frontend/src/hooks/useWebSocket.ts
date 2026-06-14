@@ -15,13 +15,17 @@ export function useWebSocket() {
   const [lastEvent, setLast]    = useState<WsEvent | null>(null);
   const wsRef   = useRef<WebSocket | null>(null);
   const retryRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const connectRef = useRef<(() => void) | null>(null);
 
   const connect = useCallback(() => {
     if (wsRef.current?.readyState === WebSocket.OPEN) return;
     const ws = new WebSocket(WS_URL);
     wsRef.current = ws;
     ws.onopen  = () => setConn(true);
-    ws.onclose = () => { setConn(false); retryRef.current = setTimeout(connect, 3000); };
+    ws.onclose = () => {
+      setConn(false);
+      retryRef.current = setTimeout(() => connectRef.current?.(), 3000);
+    };
     ws.onerror = () => ws.close();
     ws.onmessage = ({ data }) => {
       try {
@@ -34,8 +38,15 @@ export function useWebSocket() {
   }, []);
 
   useEffect(() => {
+    connectRef.current = connect;
+  }, [connect]);
+
+  useEffect(() => {
     connect();
-    return () => { retryRef.current && clearTimeout(retryRef.current); wsRef.current?.close(); };
+    return () => {
+      if (retryRef.current) clearTimeout(retryRef.current);
+      wsRef.current?.close();
+    };
   }, [connect]);
 
   return { events, connected, lastEvent };
