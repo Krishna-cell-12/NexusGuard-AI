@@ -397,10 +397,19 @@ export async function processVulnerabilityWorkflow(repoDetails) {
       headers: { "Content-Type": "application/json" },
     });
 
+    // Dynamically resolve repoFullName from cloneUrl if it matches a GitHub pattern
+    let resolvedRepoFullName = REPO_FULL_NAME;
+    if (repoDetails.cloneUrl) {
+      const match = repoDetails.cloneUrl.match(/github\.com[\/:]([^\/]+\/[^\/.]+)/);
+      if (match) {
+        resolvedRepoFullName = match[1];
+      }
+    }
+
     const aiResponse = await aiClient.post(AI_SERVICE_URL, {
       vulnerabilityReport,
-      // Pass repoFullName so the AI service can optionally create a GitHub PR.
-      repoFullName: REPO_FULL_NAME,
+      // Pass resolved repoFullName so the AI service can create a GitHub PR on the correct repo.
+      repoFullName: resolvedRepoFullName,
       // Pass oracle address as fallback contributor wallet for submitPatch.
       contributorWalletAddress: process.env.ORACLE_ADDRESS ?? null,
     });
