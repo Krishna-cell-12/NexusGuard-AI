@@ -162,28 +162,9 @@ def _pick_top_vulnerability(report: VulnerabilityReport) -> Optional[Dict[str, A
 def _get_provider() -> str:
     """Return the configured LLM provider.
 
-    Priority (in order):
-      1. Groq     — free tier, generous limits, very fast (llama-3.3-70b)
-      2. OpenAI   — gpt-4o-mini, needs billing credits
-      3. Gemini   — free tier but strict daily limits
-      4. Anthropic
-
-    Override by setting DEFAULT_LLM_PROVIDER env var to any of the above.
+    Always returns "gemini" as Gemini is the sole supported provider.
     """
-    override = os.getenv("DEFAULT_LLM_PROVIDER", "").lower()
-    if override in ("groq", "openai", "gemini", "anthropic"):
-        return override
-
-    # Auto-detect: prefer Groq (free tier) → OpenAI → Gemini → Anthropic
-    if os.getenv("GROQ_API_KEY"):
-        return "groq"
-    if os.getenv("OPENAI_API_KEY"):
-        return "openai"
-    if os.getenv("GOOGLE_API_KEY"):
-        return "gemini"
-    if os.getenv("ANTHROPIC_API_KEY"):
-        return "anthropic"
-    return "groq"  # will fail with clear error if no key is set
+    return "gemini"
 
 
 # ─────────────────────────────────────────────────────────────
@@ -195,7 +176,6 @@ async def health_check():
     """Liveness probe — called by the orchestrator before sending patch requests."""
     provider = _get_provider()
     has_gemini = bool(os.getenv("GOOGLE_API_KEY"))
-    has_openai = bool(os.getenv("OPENAI_API_KEY"))
     has_github = bool(os.getenv("GITHUB_TOKEN"))
 
     return {
@@ -204,7 +184,6 @@ async def health_check():
         "defaultProvider": provider,
         "capabilities": {
             "gemini": has_gemini,
-            "openai": has_openai,
             "githubPrCreation": has_github,
         },
         "timestamp": datetime.now(timezone.utc).isoformat(),

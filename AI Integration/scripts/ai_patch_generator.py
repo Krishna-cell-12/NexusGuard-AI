@@ -60,60 +60,31 @@ def load_config(config_path: str = str(CONFIG_PATH)) -> dict:
 #  LLM PROVIDER (shared abstraction)
 # ─────────────────────────────────────────────────────────────
 class LLMProvider:
-    """Unified interface for LLM patch generation."""
+    """Unified interface for Gemini LLM patch generation."""
 
-    def __init__(self, provider: str = "openai"):
-        self.provider = provider
+    def __init__(self, provider: str = "gemini"):
+        self.provider = "gemini"
         self.config = load_config()
-        provider_cfg = self.config.get("llm", {}).get(provider, {})
-        self.api_key = os.getenv(provider_cfg.get("api_key_env", ""))
-        self.model = provider_cfg.get("model", "gpt-4")
+        provider_cfg = self.config.get("llm", {}).get("gemini", {})
+        self.api_key = os.getenv(provider_cfg.get("api_key_env", "GOOGLE_API_KEY"))
+        self.model = provider_cfg.get("model", "gemini-2.5-flash")
         self.temperature = provider_cfg.get("temperature", 0.1)
         self.max_tokens = provider_cfg.get("max_tokens", 2048)
 
         if not self.api_key:
             raise RuntimeError(
-                f"Missing API key. Set '{provider_cfg.get('api_key_env')}' env var."
+                f"Missing API key. Set '{provider_cfg.get('api_key_env', 'GOOGLE_API_KEY')}' env var."
             )
 
     def invoke(self, prompt: str) -> str:
-        """Send a prompt to the configured LLM and return the text response."""
-        if self.provider == "openai":
-            from langchain_openai import ChatOpenAI
-            llm = ChatOpenAI(
-                model=self.model,
-                openai_api_key=self.api_key,
-                temperature=self.temperature,
-                max_tokens=self.max_tokens,
-            )
-        elif self.provider == "groq":
-            # Groq uses the OpenAI-compatible API — free tier, very fast
-            from langchain_openai import ChatOpenAI
-            llm = ChatOpenAI(
-                model=self.model,
-                openai_api_key=self.api_key,
-                base_url="https://api.groq.com/openai/v1",
-                temperature=self.temperature,
-                max_tokens=self.max_tokens,
-            )
-        elif self.provider == "anthropic":
-            from langchain_anthropic import ChatAnthropic
-            llm = ChatAnthropic(
-                model=self.model,
-                anthropic_api_key=self.api_key,
-                temperature=self.temperature,
-                max_tokens=self.max_tokens,
-            )
-        elif self.provider == "gemini":
-            from langchain_google_genai import ChatGoogleGenerativeAI
-            llm = ChatGoogleGenerativeAI(
-                model=self.model,
-                google_api_key=self.api_key,
-                temperature=self.temperature,
-                max_output_tokens=self.max_tokens,
-            )
-        else:
-            raise ValueError(f"Unsupported LLM provider: {self.provider}")
+        """Send a prompt to the configured Gemini LLM and return the text response."""
+        from langchain_google_genai import ChatGoogleGenerativeAI
+        llm = ChatGoogleGenerativeAI(
+            model=self.model,
+            google_api_key=self.api_key,
+            temperature=self.temperature,
+            max_output_tokens=self.max_tokens,
+        )
 
         response = llm.invoke(prompt)
         return response.content.strip()
@@ -149,12 +120,12 @@ Respond in EXACTLY this JSON format (no markdown fences):
 }}"""
 
 
-def generate_patch(vuln_json: dict, provider: str = "openai") -> dict:
-    """Use an LLM to generate a secure code patch.
+def generate_patch(vuln_json: dict, provider: str = "gemini") -> dict:
+    """Use Gemini to generate a secure code patch.
 
     Args:
         vuln_json: Vulnerability payload dictionary.
-        provider:  LLM backend ("openai" or "anthropic").
+        provider:  LLM backend (defaults to "gemini").
     Returns:
         Dict with keys 'patched_code' and 'explanation'.
     """
@@ -209,7 +180,7 @@ Write a clear, concise explanation (2–3 paragraphs) covering:
 3. **What developers should watch for** — similar patterns elsewhere in the codebase."""
 
 
-def generate_explanation(vuln_json: dict, patched_code: str, provider: str = "openai") -> str:
+def generate_explanation(vuln_json: dict, patched_code: str, provider: str = "gemini") -> str:
     """Generate a detailed human-readable explanation of the fix."""
     logger.info("Generating patch explanation...")
     llm = LLMProvider(provider)
@@ -379,6 +350,42 @@ def create_github_pr(
         "base": base_branch,
     }
     resp = requests.post(f"{api}/pulls", headers=headers, json=pr_payload, timeout=15)
+    if resp.status_code == 422:
+        try:
+            err_data = resp.json()
+            is_exists = False
+            
+            # Check main error message
+            main_msg = err_data.get("message", "").lower()
+            if "already exists" in main_msg or "validation failed" in main_msg:
+                is_exists = True
+                
+            for err in err_data.get("errors", []):
+                err_msg = err.get("message", "").lower()
+                err_code = err.get("code", "").lower()
+                if "already exists" in err_msg or "already exists" in err_code:
+                    is_exists = True
+                    break
+                    
+            if is_exists:
+                logger.info("PR already exists for branch '%s'. Fetching details...", branch_name)
+                owner = repo_full_name.split("/")[0]
+                list_resp = requests.get(
+                    f"{api}/pulls",
+                    headers=headers,
+                    params={"head": f"{owner}:{branch_name}", "state": "all"},
+                    timeout=15,
+                )
+                list_resp.raise_for_status()
+                prs = list_resp.json()
+                if prs:
+                    pr_url = prs[0]["html_url"]
+                    pr_number = prs[0]["number"]
+                    logger.info("Found existing PR #%d: %s", pr_number, pr_url)
+                    return {"pr_url": pr_url, "pr_number": pr_number, "branch": branch_name}
+        except Exception as query_err:
+            logger.warning("Failed to query existing PR: %s", query_err)
+
     resp.raise_for_status()
     pr_data = resp.json()
     pr_url = pr_data["html_url"]
@@ -453,7 +460,7 @@ def notify_layer5_webhook(
 # ─────────────────────────────────────────────────────────────
 #  5. FULL PIPELINE OUTPUT (JSON format for automation)
 # ─────────────────────────────────────────────────────────────
-def generate_full_output(vuln_json: dict, provider: str = "openai") -> dict:
+def generate_full_output(vuln_json: dict, provider: str = "gemini") -> dict:
     """Run the full Layer 4 pipeline and return the JSON output.
 
     This is the primary function to call from other modules or CI.
@@ -491,7 +498,7 @@ def generate_full_output(vuln_json: dict, provider: str = "openai") -> dict:
 # ─────────────────────────────────────────────────────────────
 def main(
     json_input_path: str = "vulnerability.json",
-    provider: str = "openai",
+    provider: str = "gemini",
     repo: Optional[str] = None,
     create_pr: bool = False,
 ):
@@ -532,7 +539,7 @@ if __name__ == "__main__":
 
     parser = argparse.ArgumentParser(description="NexusGuard AI — Layer 4 Patch Generator")
     parser.add_argument("--input", default="vulnerability.json", help="Path to vulnerability JSON")
-    parser.add_argument("--provider", default="gemini", choices=["openai", "anthropic", "gemini"], help="LLM provider")
+    parser.add_argument("--provider", default="gemini", choices=["gemini"], help="LLM provider")
     parser.add_argument("--repo", default=None, help="GitHub repo (owner/name) for PR creation")
     parser.add_argument("--create-pr", action="store_true", help="Actually create the PR on GitHub")
     args = parser.parse_args()

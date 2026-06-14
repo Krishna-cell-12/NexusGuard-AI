@@ -297,6 +297,7 @@ export async function processVulnerabilityWorkflow(repoDetails) {
   const transition = (state, message, meta = {}) => {
     result.finalState = state;
     log.info(state, message, meta);
+    const prevEntry = runStore.get(runId) || {};
     // Persist to in-memory store so GET /api/status/:runId and GET /api/runs return live data.
     runStore.set(runId, {
       runId,
@@ -308,15 +309,15 @@ export async function processVulnerabilityWorkflow(repoDetails) {
       commitSha: repoDetails.commitSha,
       senderLogin: repoDetails.senderLogin,
       // Rich data for dashboard panels (populated as pipeline progresses)
-      scanReport: result.vulnerabilityReport ?? undefined,
+      scanReport: result.vulnerabilityReport ?? prevEntry.scanReport ?? undefined,
       patchResult: result.patchCode ? {
         patchCode: result.patchCode,
         explanation: result.patchExplanation,
-        prUrl: meta.prUrl ?? undefined,
-        prNumber: meta.prNumber ?? undefined,
+        prUrl: meta.prUrl ?? prevEntry.patchResult?.prUrl ?? undefined,
+        prNumber: meta.prNumber ?? prevEntry.patchResult?.prNumber ?? undefined,
       } : undefined,
-      blockchainResult: result.bountyReceipt ?? undefined,
-      error: result.error ?? undefined,
+      blockchainResult: result.bountyReceipt ?? prevEntry.blockchainResult ?? undefined,
+      error: result.error ?? prevEntry.error ?? undefined,
       ...meta,
     });
     broadcastToClients({ event: "PIPELINE_STATE", runId, state, message, ...meta });

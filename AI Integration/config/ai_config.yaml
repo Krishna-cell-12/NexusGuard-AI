@@ -10,34 +10,15 @@
 # API keys are read from environment variables (never hardcoded).
 
 llm:
-  openai:
-    api_key_env: "OPENAI_API_KEY"
-    model: "gpt-4o-mini"
-    temperature: 0.2
-    max_tokens: 2048
-
-  anthropic:
-    api_key_env: "ANTHROPIC_API_KEY"
-    model: "claude-sonnet-4-20250514"
-    temperature: 0.2
-    max_tokens: 2048
-
   gemini:
     api_key_env: "GOOGLE_API_KEY"
     model: "gemini-2.5-flash"
     temperature: 0.2
     max_tokens: 2048
 
-  groq:
-    api_key_env: "GROQ_API_KEY"
-    model: "llama-3.3-70b-versatile" # Groq free tier — very fast inference
-    temperature: 0.2
-    max_tokens: 2048
-
 # ── Default Provider ─────────────────────────────────────────
-# groq has the most generous free tier (no billing needed).
-# Override with DEFAULT_LLM_PROVIDER env var if needed.
-default_provider: "groq"
+# Default LLM provider (Override with DEFAULT_LLM_PROVIDER env var if needed).
+default_provider: "gemini"
 
 # ── GitHub Integration ───────────────────────────────────────
 github:

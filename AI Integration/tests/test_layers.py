@@ -152,7 +152,7 @@ class TestLayer4:
         ]
         mock_provider_cls.return_value = mock_instance
 
-        result = generate_full_output(SAMPLE_VULN, provider="openai")
+        result = generate_full_output(SAMPLE_VULN, provider="gemini")
 
         assert "patched_code" in result
         assert "explanation" in result
